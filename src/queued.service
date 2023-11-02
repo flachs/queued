@@ -1,0 +1,14 @@
+# cp queued.service /usr/lib/systemd/system
+# systemctl start queued
+# systemctl enable queued
+
+[Unit]
+Description=Queued: a network job system
+After=user.mount
+
+[Service]
+Type=simple
+ExecStart=/user/utility/packages/queued/bin/q -server
+
+[Install]
+WantedBy=multi-user.target

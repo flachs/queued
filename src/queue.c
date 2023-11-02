@@ -1,0 +1,666 @@
+#include "q.h"
+#include "dlc_string.h"
+
+#include <sys/types.h>
+#include <pwd.h>
+#include <time.h>
+#include <sys/wait.h>
+
+#include "list.h"
+
+/* the master server collects, organizes, and eventually schedules
+   jobs sent by enqueue.  the goal is to be event driven
+
+   event           action
+   -----           -------------------------------
+   job is enqueud  try to find a host to run it on
+                     or record it on the queue
+   job ends        try to find a job on the queueu
+                     to replace it with on the host   
+*/
+
+extern const sendhdr_t hdr_zero;
+
+static inline int cmp_timespec(struct timespec first,struct timespec second)
+  {
+  if (second.tv_sec == first.tv_sec)
+    return signed_step( second.tv_nsec - first.tv_nsec );
+  return signed_step(second.tv_sec - first.tv_sec);
+  }
+
+static inline int later(struct timespec first,struct timespec second)
+  {
+  if (second.tv_sec == first.tv_sec) return second.tv_nsec > first.tv_nsec;
+  return second.tv_sec > first.tv_sec;
+  }
+static inline int earlier(struct timespec first,struct timespec second)
+  {
+  if (second.tv_sec == first.tv_sec) return second.tv_nsec < first.tv_nsec;
+  return second.tv_sec < first.tv_sec;
+  }
+
+void print_user_list(joblink_t *it)
+  {
+  uidlink_t *ul = uidlist_head();
+  int uc = 0;
+
+  for (;ul && uc<10 ; ul=ul->un,uc++) 
+    {
+    printf("user %d %d %p %p (%p)\n",uc,ul->uid,ul->head,ul->tail,it);
+    joblink_t *jl = ul->head;
+    int c=0;
+    for (; jl && c<10 ; jl=jl->un,c++)
+      {
+      printf("    c %d h %p p %p it %p n %p t %p: %s\n",
+             c,
+             jl->u->head,jl->up,jl,jl->un,jl->u->tail,
+             jl->dir);
+      }
+    }
+  }
+
+// open a files in a job dir and also return its size
+int openjob(const char *dir,const char *file,int flags,off_t *filesize)
+  {
+  int pathlen = strlen(dir);
+  int filelen = strlen(file);
+  char pathname[pathlen+1+filelen+1];
+  strcpy(pathname,dir);
+  pathname[pathlen]='/';
+  strcpy(pathname+pathlen+1,file);
+  
+  int fd = open(pathname,flags,0666);
+  
+  if (fd<0)
+    {
+    if (filesize) *filesize = 0;
+    return fd;
+    }
+
+  if (filesize)
+    {
+    struct stat statbuf;
+    fstat(fd,&statbuf);
+
+    *filesize = statbuf.st_size;
+    }
+  
+  return fd;
+  }
+
+/* read the parm file - a number of parms deal with
+   matters important to job requirements */
+int read_parse_parms(const char *dir,char ***parmsp)
+  {
+  off_t parmsize;
+  
+  int pfd = openjob(dir,"parm",O_RDONLY,&parmsize);
+  if (pfd<0) return 0;
+  
+  char *pbuf = malloc(parmsize);
+  read(pfd,pbuf,parmsize);
+  close(pfd);
+  
+  int nparms=0;
+  for (int i=0;i<parmsize;i++) if (pbuf[i]==0) nparms++;
+
+  char **parms = *parmsp = malloc(sizeof(char *)*2*(nparms+1));
+  parms[0] = pbuf;
+  
+  for (int i=0,n=1;i<parmsize;i++)
+    if (pbuf[i] == ((n&1) ? '=' : 0))
+      {
+      pbuf[i] = 0;
+      parms[n++] = pbuf+i+1;
+      }
+  return nparms;
+  }
+
+// search parms for a parm - return pointer to string value
+const char *find_parm(const char *name,
+                      int nparms, char **parml,
+                      const char *def)
+  {
+  for (int i=0;i<nparms;i++)
+    if (! strcmp(name,parml[2*i]))
+      return parml[2*i+1];
+  
+  return def;
+  }
+
+// search parms for a parm - return integer value
+int find_int_parm(const char *name,
+                  int nparms, char **parml,
+                  int def)
+  {
+  for (int i=0;i<nparms;i++)
+    if (! strcmp(name,parml[2*i]))
+      return atoi(parml[2*i+1]);
+  
+  return def;
+  }
+
+// return contents of status query via server_status
+statusinfomsg_t *get_myhost_status(int mypid)
+  {
+  static statusinfomsg_t *si;
+  static int nrs=-1;
+
+  queuestatus_t *ques = readqueuestatus(mypid);
+
+  if (ques->n > nrs)
+    {
+    nrs = ques->n+16;
+    size_t newsize = ( sizeof(statusinfomsg_t)+
+                       nrs*sizeof(running_stats_t));
+    
+    si = realloc(si, newsize);
+    memset(si,0,newsize);
+    }
+
+  si->nrs = ques->n;
+  memcpy(si->runs,ques->s,sizeof(running_stats_t)*si->nrs);
+  
+  si->info = readcpuinfo();
+  si->stat = readcpustatus();
+  si->user = readuserinfo();
+  
+  return si;
+  }
+
+/* send getstatus query to a host and recieve a reply,
+   unless the query is for the local host, in which case
+   just run get_myhost_status */
+statusinfomsg_t *get_host_status(const char *host,int client)
+  {
+  if (!client && !strcmp(host,hostname()))
+    {
+    int srvpid = 0;
+    return get_myhost_status(srvpid);
+    }
+  
+  int port = getserviceport();
+  int sockfd = open_client_socket(host,port,host);
+  
+  if (sockfd<0) return NULL;
+
+  sendhdr_t hdr;
+
+  hdr.magic = get_magic_for_host(host);
+  hdr.uid   = getuid();
+  hdr.gid   = getgid();
+  hdr.kind  = DK_getstatus;
+  hdr.size  = 0;
+
+  send(sockfd,&hdr,sizeof(hdr),0);
+  recvn(sockfd,&hdr,sizeof(hdr),0);
+
+  static int sisize=0;
+  static statusinfomsg_t *si=0;
+
+  if (hdr.size>sisize)
+    {
+    si = realloc(si,hdr.size);
+    sisize = hdr.size;
+    }
+  
+  recvn(sockfd,si,hdr.size,0);
+  
+  close(sockfd);  
+
+  return si;
+  }
+
+/* a job has been scheduled, send it to a host to be run */
+void send_job_host(const char *host,joblink_t *jl)
+  {
+  sendhdr_t hdr = hdr_zero;
+  
+  hdr.kind = DK_runjob;
+  hdr.size = strlen(jl->dir)+1;
+  hdr.uid = jl->u->uid;
+  hdr.gid = jl->gid;
+  set_tag_ui32x2(hdr.value,jl);
+
+  if (0)
+    printf("send_job_host %d\n",hdr.uid);
+  
+  simple_request(host,"sendjob",&hdr,jl->dir);
+  }
+
+/* send a kill request for a job to the host it is running on */
+int send_kill(const char *host,joblink_t *jl)
+  {
+  sendhdr_t hdr = hdr_zero;
+  
+  hdr.kind = DK_killjob;
+  hdr.uid = jl->u->uid;
+  hdr.gid = jl->gid;
+  set_tag_ui32x2(hdr.value,jl);
+  if (0)
+    printf("send_kill %d %s %p %s\n",
+           hdr.uid,host,jl,jl->dir);
+  simple_request(host,"killjob",&hdr,NULL);
+  return hdr.value[3];
+  }
+
+/* decide if a job should be scheduled on a host */
+int jl_fits_hl(conf_t *conf,
+               hostlink_t *hl,
+               statusinfomsg_t *si,
+               joblink_t *jl)
+  {
+  if (! jl) return 0;// no valid job
+  // if cant get info, dont schedule  
+
+  if (0) fprintf(stderr,"   sjhl-mem: %d %d %d\n",
+                 jl->mem,si->info.memory,hl->used_memory);
+  
+  // dont schedule if mem request is too big
+  if (jl->mem > si->info.memory - hl->used_memory) return 0;
+
+  if (0)
+    fprintf(stderr,"   sjhl-thr: %d %d %d\n",
+            jl->threads,si->info.threads,hl->used_threads);
+  
+  // dont schedule if threads request is too big
+  int threads = jl->threads;
+  if (threads==-1)     threads = si->info.threads/si->info.cores;
+  else if (threads==0) threads = si->info.threads;
+
+  int available_threads = si->info.threads -
+                          hl->used_threads -
+                          si->runs[0].running;
+  
+  if (threads > available_threads) return 0;
+
+  if (0)
+    fprintf(stderr,"   sjhl-ok\n");
+  return threads;
+  }
+
+typedef struct
+  {
+  joblink_t *jl;
+  hostlink_t *hl;
+  int threads;
+  int memavail;
+  int thravail;
+  } hostpick_t;
+
+/* find a job for an open spot on a host */
+int pick_job_hl(conf_t *conf,
+                hostlink_t *hl,
+                statusinfomsg_t *si,
+                hostpick_t *hp)
+  {
+  joblink_t *jl = hp->jl;
+  
+  int threads = jl_fits_hl(conf,hl,si,jl);
+  if (threads==0) return 0;
+      
+  // ok to schedule -- is this better than hp?
+  int nrs = si->nrs;
+  int ath = si->info.threads - hl->used_threads;
+  if (hp->hl)
+    {
+    if (hp->memavail > si->stat.memavail)
+      {
+      if (0)
+        fprintf(stderr,"  host %s has more memavail than %s\n",
+                hp->hl->host,hl->host);
+      return 0;
+      }
+    
+    if (hp->thravail > ath)
+      {
+      if (0)
+        fprintf(stderr,"  host %s has more thravail than %s\n",
+                hp->hl->host,hl->host);
+      return 0;
+      }
+    if (0)
+      fprintf(stderr,"  host %s is not better than %s\n",
+              hp->hl->host,hl->host);
+    }
+  else
+    {
+    if (0) fprintf(stderr,"  first host %s\n",hl->host);
+    }
+  
+  // yes it is better than hl
+  hp->hl = hl;
+  hp->threads = threads;
+  hp->memavail = si->stat.memavail;
+  hp->thravail = ath;
+
+  // if hl is completely idle -- just schedule it
+  int goodenough = hl->jobs_running==0 && si->user.users==0;
+  if (goodenough)
+    {
+    fprintf(stderr,"  goodenough %s\n",hl->host);
+    }
+  
+  return goodenough;
+  }
+
+/* do the accounting for assigning a job to a host and
+   either send it there or launch it on this host */
+int schedule_job_hl(conf_t *conf,
+                    hostlink_t *hl,
+                    joblink_t *jl,
+                    int threads)
+  {
+  // do accounting
+  if (! hl) return 0; // hl was not picked
+
+  // fprintf(stderr,"scheduling %p %s on %p %s\n",jl,jl->dir,hl,hl->host);
+  
+  jl->threads = threads;
+  
+  hl->used_memory += jl->mem;
+  hl->used_threads += jl->threads;
+  hl->jobs_running ++;
+
+  jl->u->threads += jl->threads;
+  clock_gettime(CLOCK_REALTIME, &jl->u->l_start);
+  
+  // put job in host list
+  add_link_to_head(hl,jl,h);
+  
+  // send the job
+  if (strcmp(hl->host,hostname()))
+    { // remote host
+    if (0) fprintf(stderr,"   sjhl-remote: %p %d\n",jl,jl->u->uid);
+    send_job_host(hl->host,jl);
+    }
+  else
+    { // local host -- fork a control thread
+    if (0) fprintf(stderr,"   sjhl-local: \n");
+    jl->tag = (uint64_t)jl;
+    pthread_detached(&launch_control,jl);
+    }
+
+  return 1;  
+  }
+
+/* get status for and try to job for a host */
+int pick_job_host(conf_t *conf,const char *host,void *info)
+  {
+  hostpick_t *hp = info;
+  
+  joblink_t *jl = hp->jl;
+  statusinfomsg_t *si = get_host_status(host,0);
+  
+  if (0) fprintf(stderr,"sjh: %s %s %d\n",jl->dir,host,si->info.cores);
+
+  if (si->info.cores==0) return 0;   // get_host_status failed...
+  
+  hostlink_t *hl = get_host_state(host);
+  return pick_job_hl(conf,hl,si,hp);
+  }
+
+/* have a job -- find a host for it */
+int schedule_job(conf_t *conf,joblink_t *jl)
+  {
+  hostpick_t hp;
+  
+  hp.jl=jl;
+  hp.hl=0;
+  
+  int picked = for_each_host(conf,
+                             find_parm("group",jl->nparms,jl->parms,"all"),
+                             pick_job_host,
+                             &hp);
+
+  return schedule_job_hl(conf,hp.hl,hp.jl,hp.threads);
+  }
+
+/* stat the job dir to get submit time */
+struct timespec get_job_time(joblink_t *jl)
+  {
+  struct stat jstat;
+  stat(jl->dir,&jstat);
+  return jstat.st_ctim;
+  }
+
+/* insert job into q maintaining age order */
+void insert_into_list_sorted_newest_oldest(uidlink_t *ul,joblink_t *jl)
+  {
+  // job time is create time of job directory
+  jl->ct = get_job_time(jl);
+  
+  // search for spot in user list between older job and newer job
+  joblink_t *p;
+  for (p=ul->head; p && earlier(jl->ct,p->ct); p=p->un) ;
+  
+  // put job in order from newest to oldest
+  if (p) add_link_before(p,jl,u);
+  else   add_link_to_tail(ul,jl,u);
+  
+  jl->u = ul;
+  }
+
+/* recieve a jobdir from enqueue */
+joblink_t *recieve_jobinfo(sendhdr_t *hdr,
+                           const char *dir,
+                           int sock)
+  {
+  size_t msgsize = hdr->size;
+  
+  joblink_t *jl = make_jl();
+  
+  jl->gid = hdr->gid;
+  jl->jg  = hdr->value[0];
+  
+  jl->dir = malloc(strlen(dir)+1+msgsize+1);
+  char *dp = cpystring(jl->dir,dir);
+  *dp++ = '/';
+  
+  recvn(sock,dp,msgsize,0);  // now have jobid
+  
+  return jl;
+  }
+
+// master side of enqueue.c: enqueue_client
+void server_enqueue(server_thread_args_t *client)
+  { // on a sync thread in the server space
+  sendhdr_t hdr = client->hdr;
+  int sock = client->sock;
+  
+  // Append job to database
+  uidlink_t *ul = find_or_make_uid(hdr.uid);
+  joblink_t *jl = recieve_jobinfo(&hdr,ul->dir,sock);
+  insert_into_list_sorted_newest_oldest(ul,jl);
+
+  // printf("enqueueing uid %d %d %d\n",hdr.uid,ul->uid,jl->u->uid);
+  
+  // read and parse parms
+  jl->nparms  = read_parse_parms(jl->dir,&(jl->parms));
+  jl->mem     = find_int_parm("mem",jl->nparms,jl->parms,1); //mb
+  jl->threads = find_int_parm("threads",jl->nparms,jl->parms,1); //single
+
+  // try to schedule it
+  int sch_immed = schedule_job(client->conf,jl);
+
+  // send response to client
+  hdr.kind = DK_echorep;
+  hdr.size = 0;
+  hdr.value[0] = sch_immed;
+  
+  send_response(sock,&hdr,NULL);
+  close(sock);
+  }
+
+
+int user_sorter(const void *a,const void *b)
+  {
+  const uidlink_t *ua = a;
+  const uidlink_t *ub = b;
+
+  // try to equalize running threads
+  int urc = signed_step(ua->threads - ub->threads);
+  if (urc) return urc;
+
+  // try to give priority to most stale q
+  int stc = cmp_timespec(ua->l_start,ub->l_start);
+  if (stc) return stc;
+
+  // no reason to pick
+  return 0;
+  }
+
+
+void schedule_host(conf_t *conf,hostlink_t *hl)
+  {
+  uidlink_t *ul;
+
+  // count number of users with jobs to run
+  int uidn = 0;
+  for (ul=uidlist_head() ; ul ; ul=ul->un)
+    if (ul->head) uidn++;
+
+  if (uidn==0) return;  // nobody with jobs to run
+
+  // populate and sort uid list according to
+  // number of running threads
+  uidlink_t *uid[uidn];
+
+  int n=0;
+  for (ul=uidlist_head() ; ul ; ul=ul->un)
+    if (ul->head) uid[n++] = ul;
+
+  if (n>1) qsort(uid,n,sizeof(*uid),user_sorter);
+
+  statusinfomsg_t *si = get_host_status(hl->host,0);
+  if (si->info.cores==0) return;
+
+  // schedule and keep scheduling jobs on this host
+  // until no more happens
+  int onedone=1;
+  while (onedone)
+    {
+    onedone = 0;
+    int ui;
+    for (ui=0;ui<n;ui++)
+      {  
+      joblink_t *jl;
+      int threads;
+      
+      for (jl=uid[ui]->tail ; jl ; jl = jl->up) // oldest job first
+        if ( !jl->h && (threads = jl_fits_hl( conf, hl, si, jl ) ))
+          {
+          schedule_job_hl(conf,hl,jl,threads);
+          onedone ++;
+          break;  // give next user a chance
+          }
+      }
+    }
+  }
+
+// master receives notification job is done from
+// server's launch_control
+void server_jobdone(server_thread_args_t *client)
+  {
+  sendhdr_t hdr = client->hdr;
+  int sock = client->sock;
+  int status = hdr.value[3];
+  joblink_t *jl = get_tag_ui32x2(hdr.value);
+
+  if (0) fprintf(stderr,"sjd: %p\n",jl);
+  
+  // give back resources
+  hostlink_t *hl = jl->h;
+  hl->used_memory  -= jl->mem;
+  hl->used_threads -= jl->threads;
+  hl->jobs_running -- ;
+
+  uidlink_t *ul = jl->u;
+  ul->threads -= jl->threads;
+
+  remove_link(jl,h);  // unlink it from host list
+  remove_link(jl,u);  // unlink it from uid list
+
+  free_jl(jl);
+  
+  hdr.kind = DK_reply;
+  hdr.size = 0;
+  send_response(sock,&hdr,NULL);
+  close(sock);
+
+  schedule_host(client->conf,hl);
+  }
+
+int append_host_state(conf_t *conf,const char *host,void *info)
+  {
+  dlc_string **r = (dlc_string **)info;
+  hostlink_t *hl = get_host_state(host);
+  statusinfomsg_t *si = get_host_status(host,0);
+  
+  dlc_string_caf(r,"%s %d %d %d %d\n",host,
+                 hl->jobs_running,si->stat.la1,
+                 si->info.threads - hl->used_threads,
+                 si->info.memory - hl->used_memory);
+
+  parsed_cmd_t pc;
+  joblink_t *jl=hl->head;
+  for (; jl ; jl=jl->hn)
+    {
+    sendhdr_t *hdr = get_job_cmd(jl->dir,&pc);
+    dlc_string_caf(r,"  %s %d %d %s %s\n",
+                   strrchr(jl->dir,'/')+1,
+                   jl->threads,jl->mem,
+                   jl->u->name,
+                   pc.cmd);
+    free(pc.env);
+    free(hdr);
+    }
+  
+  return 0;
+  }
+
+// queue status request... returns string to client in
+// enqueue.c: listqueue_client
+void server_lsq(server_thread_args_t *client)
+  {
+  dlc_string *response=0;
+  sendhdr_t hdr = client->hdr;
+  parsed_cmd_t pc;
+
+  dlc_string_cat(&response,"machines:\n");
+  
+  for_each_host(client->conf,
+                "all",
+                append_host_state,
+                &response);
+
+  dlc_string_cat(&response,"users:\n");
+  uidlink_t *ul = uidlist_head();
+  for ( ; ul ; ul = ul->un )
+    { //foreach user
+    joblink_t *jl=ul->head;
+    
+    dlc_string_caf(&response," %d %s %d\n",
+                   ul->uid,ul->name,ul->threads);
+    
+    for (; jl ; jl=jl->un)
+      { // foreach job
+      // print job info
+      sendhdr_t *hdr = get_job_cmd(jl->dir,&pc);
+      dlc_string_caf(&response,"  %s %d %d %s %s\n",
+                     strrchr(jl->dir,'/')+1,jl->threads,jl->mem,
+                     jl->h ? jl->h->host : "NOTRUN",
+                     pc.cmd);
+      free(pc.env);
+      free(hdr);
+      }
+    }
+  
+  hdr.size = dlc_string_len(response)+1;
+  hdr.kind = DK_reply;
+  send_response(client->sock,&hdr,response->t);
+  dlc_string_free(&response);
+  
+  close(client->sock);
+  }
+

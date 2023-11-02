@@ -1,0 +1,40 @@
+
+ * fix terminate to only work if root orders it
+ * factor active users into queue.c:jl_fits_hl()
+ * factor available memory into queue.c:jl_fits_hl()
+ * implement load master/server from running state/dirs
+ * Check point and restore / migration from host to host
+     maybe use proj/netsrc/criu
+ 
+
+Done
+====
+
+ * implement security function via pid files.  Each
+   server generates a random 64 and stores it in a pid
+   file in an nfs shared dir.  setuid root client reads
+   it to send packets to server with proper number.
+ * list should show time / uid
+ * delete / list should use submission hostname + dirname
+ * plum job group jq=decimalnumber for -e -l -d
+   a way for user to organize jobs.  not used by
+   scheduler
+   
+ * improve delete job
+    + make sure it works for job running on master host
+    + add job search modes
+       time=beg,end datetime range
+                      datetime: date@time
+                      date:   [YY]YY/MM/DD
+                                     MM/DD
+                                        DD
+                               [YY]YYMonDD
+                                     MonDD
+                      time        HH:MM:SSXM
+                                  HH:MMXM
+                                  HHXM
+
+                      relatative: -HH:MM
+       cmd=cmdre
+       jg=job group id
+       user=username   (- for all users--otherwise only your own) 
