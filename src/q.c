@@ -38,23 +38,25 @@ void print_help(optdes *opt_des,char *name,char *msg)
   fprintf_option_table(stderr,opt_des);
   fprintf(stderr,
           "\nrunnow: [parm=value] command [args]\n"
-          "    parms            description\n"
-          "    host=name        run on a host or group of hosts\n"
+          "    parms               description\n"
+          "    host=name           run on a host or group of hosts\n"
           "\nenqueue: -e [parm=value] command [args]\n"
-          "    parms            description\n"
-          "    mem=KBytes       memory needed for run\n"
-          "    threads=value    threads wanted (0:machine, -1:core)\n"
+          "    parms               description\n"
+          "    group=host_group    machines to run on\n"
+          "    keep=(error,always) when not to delete the run dir\n"
+          "    mem=KBytes          memory needed for run\n"
+          "    threads=value       threads wanted (0:machine, -1:core)\n"
           "\nlist queue: -l [parm=value]\n"
-          "    parms            description\n"
-          "    c=command        matching a command\n"
-          "    t=time,range     enqueued in a time range\n"
-          "    h=host           running on host\n"
-          "    j=jobgroup       matching the job group\n"
-          "    u=username       matching a user name\n"
+          "    parms               description\n"
+          "    c=command           matching a command\n"
+          "    t=time,range        enqueued in a time range\n"
+          "    h=host              running on host\n"
+          "    j=jobgroup          matching the job group\n"
+          "    u=username          matching a user name\n"
           "\ndequeue: -d [same parms as list]\n"
           "\nstatus: -s [parm=value]\n"
-          "    parms            description\n"
-          "    show=jobs        show jobs running on each host\n"
+          "    parms               description\n"
+          "    show=jobs           show jobs running on each host\n"
   );
 
   exit(1);
@@ -447,10 +449,13 @@ int main(int argn,char **argv,char **env)
     }
 
   conf_t *group_master = conf_find(conf,"group","master",NULL);
-  dlc_option_set_default(options,"master",group_master->name);
-
+  
+  if (group_master)
+    dlc_option_set_default(options,"master",group_master->name);
+    
   conf_t *port_service = conf_find(conf,"port","service",NULL);
-  dlc_option_set_default(options,"p",port_service->name);
+  if (port_service)
+    dlc_option_set_default(options,"p",port_service->name);
   
   init_env_stuff(env);
   
