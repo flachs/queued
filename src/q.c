@@ -448,6 +448,9 @@ int main(int argn,char **argv,char **env)
 
   conf_t *group_master = conf_find(conf,"group","master",NULL);
   dlc_option_set_default(options,"master",group_master->name);
+
+  conf_t *port_service = conf_find(conf,"port","service",NULL);
+  dlc_option_set_default(options,"p",port_service->name);
   
   init_env_stuff(env);
   
