@@ -52,7 +52,7 @@ char *conf_parse_stmt(char *p,
   while (isspace(*p)) *p++=0;
 
   
-  if (! isalpha(*p) && *p!='/') return NULL;
+  if (! isalnum(*p) && *p!='/') return NULL;
 
   *list = p;
 
