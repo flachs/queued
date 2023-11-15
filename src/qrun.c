@@ -408,7 +408,7 @@ int server_child_fork(uid_t uid,gid_t gid,
   else cp = pwent.pw_shell;	/* no slash in shell string */
 
   // only returns if error happens
-  execle(pwent.pw_shell, cp, "-c", cmd, NULL, env);
+  execle(pwent.pw_shell, cp, "-fc", cmd, NULL, env);
 
   perror(pwent.pw_shell);
   exit(1);  // exit the child after an exec error
@@ -1059,7 +1059,7 @@ int run_localhost(int needfork,int argn,char **argv,char **env)
 
   
   // only returns if error happens
-  execl(pwent.pw_shell, cp, "-c", cmd, NULL);
+  execl(pwent.pw_shell, cp, "-fc", cmd, NULL);
 
   perror(pwent.pw_shell);
   return(1);
