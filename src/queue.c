@@ -5,6 +5,7 @@
 #include <pwd.h>
 #include <time.h>
 #include <sys/wait.h>
+#include <stdlib.h>
 
 #include "list.h"
 
@@ -179,14 +180,14 @@ statusinfomsg_t *get_host_status(const char *host,int client)
     return get_myhost_status(srvpid);
     }
   
+  sendhdr_t hdr;
+  if (get_magic_for_host(host,&hdr.magic)) return NULL;
+  
   int port = getserviceport();
   int sockfd = open_client_socket(host,port,host);
   
   if (sockfd<0) return NULL;
 
-  sendhdr_t hdr;
-
-  hdr.magic = get_magic_for_host(host);
   hdr.uid   = getuid();
   hdr.gid   = getgid();
   hdr.kind  = DK_getstatus;
@@ -253,26 +254,87 @@ int jl_fits_hl(conf_t *conf,
   if (! jl) return 0;// no valid job
   // if cant get info, dont schedule  
 
+  conf_t *limits = conf_find(conf,"limits",hl->host,NULL);
+  int limit_memory = si->info.memory;
+  int limit_threads = si->info.threads;
+  int busy_start = -1;  // sec in day
+  int busy_end   = -1;
+  for (; limits ; limits=limits->next)
+    {
+    if (!strncmp(limits->name,"mem=",4))
+      {
+      char *suf=0;
+      int mem = strtol(limits->name+4,&suf,0);
+      if (suf && *suf=='M') mem*=1024;
+      if (suf && *suf=='G') mem*=1024*1024;
+      if (mem<limit_memory) limit_memory = mem;
+      }
+    if (!strncmp(limits->name,"threads=",8))
+      {
+      char *suf=0;
+      int threads = strtol(limits->name+8,&suf,0);
+      if (threads<limit_threads) limit_threads = threads;
+      }
+    if (!strncmp(limits->name,"cores=",6))
+      {
+      char *suf=0;
+      int threads = strtol(limits->name+6,&suf,0)*2;
+      if (threads<limit_threads) limit_threads = threads;
+      }
+    if (!strncmp(limits->name,"busy=",5))
+      {
+      char *suf=0;
+      busy_start = strtol(limits->name+5,&suf,10)*60*60;
+      if (suf && *suf==':')
+        {
+        int m = strtol(suf+1,&suf,10);
+        busy_start += m*60;
+        }
+      if (suf && *suf)
+        {
+        busy_end = strtol(suf+1,&suf,10)*60*60;
+        if (*suf==':')
+          {
+          int m = strtol(suf+1,&suf,10);
+          busy_end += m*60;
+          }
+        }
+      }
+    }
+
   if (0) fprintf(stderr,"   sjhl-mem: %d %d %d\n",
-                 jl->mem,si->info.memory,hl->used_memory);
+                 jl->mem,limit_memory,hl->used_memory);
+
+  // dont schedule if host is busy
+  if (busy_end>busy_start)
+    {
+    time_t now = time(NULL);
+    struct tm *tm = localtime(&now);
+    int nows  = tm->tm_sec + tm->tm_min*60 + tm->tm_hour*60*60;
+    if (nows>=busy_start && nows<=busy_end) return 0;
+    }
   
   // dont schedule if mem request is too big
-  if (jl->mem > si->info.memory - hl->used_memory) return 0;
+  if (jl->mem > limit_memory - hl->used_memory) return 0;
 
   if (0)
     fprintf(stderr,"   sjhl-thr: %d %d %d\n",
-            jl->threads,si->info.threads,hl->used_threads);
-  
-  // dont schedule if threads request is too big
-  int threads = jl->threads;
-  if (threads==-1)     threads = si->info.threads/si->info.cores;
-  else if (threads==0) threads = si->info.threads;
+            jl->threads,limit_threads,hl->used_threads);
 
-  int available_threads = si->info.threads -
-                          hl->used_threads -
-                          si->runs[0].running;
+  // threads request 
+  int threads = jl->threads;
+  if (threads==-1)     threads = 2*si->info.cores;
+  else if (threads==0) threads = limit_threads;
+
+  // dont schedule if threads request is too big
+  int available_threads_h = si->info.threads -
+                            hl->used_threads -
+                            si->runs[0].running;
+  int available_threads_l = limit_threads -
+                            hl->used_threads;
   
-  if (threads > available_threads) return 0;
+  if (threads > available_threads_h ||
+      threads > available_threads_l ) return 0;
 
   if (0)
     fprintf(stderr,"   sjhl-ok\n");
@@ -467,10 +529,25 @@ void server_enqueue(server_thread_args_t *client)
   { // on a sync thread in the server space
   sendhdr_t hdr = client->hdr;
   int sock = client->sock;
-  
+
   // Append job to database
   uidlink_t *ul = find_or_make_uid(hdr.uid);
   joblink_t *jl = recieve_jobinfo(&hdr,ul->dir,sock);
+
+  // make sure cmd is present
+  sendhdr_t *chdr=get_job_cmd(jl->dir,NULL);
+  if (! chdr)
+    { // not yet, have to reject back to client, it
+    // can wait and send request back...
+    hdr.kind = DK_reject;
+    hdr.size = 0;
+    send_response(sock,&hdr,NULL);
+    close(sock);
+    return;
+    }
+  
+  // message didnt beat nfs....
+  free(chdr);
   insert_into_list_sorted_newest_oldest(ul,jl);
 
   // printf("enqueueing uid %d %d %d\n",hdr.uid,ul->uid,jl->u->uid);
@@ -484,7 +561,7 @@ void server_enqueue(server_thread_args_t *client)
   int sch_immed = schedule_job(client->conf,jl);
 
   // send response to client
-  hdr.kind = DK_echorep;
+  hdr.kind = DK_reply;
   hdr.size = 0;
   hdr.value[0] = sch_immed;
   
@@ -607,6 +684,7 @@ int append_host_state(conf_t *conf,const char *host,void *info)
   for (; jl ; jl=jl->hn)
     {
     sendhdr_t *hdr = get_job_cmd(jl->dir,&pc);
+    if (! hdr) continue;
     dlc_string_caf(r,"  %s %d %d %s %s\n",
                    strrchr(jl->dir,'/')+1,
                    jl->threads,jl->mem,
@@ -647,6 +725,8 @@ void server_lsq(server_thread_args_t *client)
       { // foreach job
       // print job info
       sendhdr_t *hdr = get_job_cmd(jl->dir,&pc);
+      if (!hdr) continue;
+      
       dlc_string_caf(&response,"  %s %d %d %s %s\n",
                      strrchr(jl->dir,'/')+1,jl->threads,jl->mem,
                      jl->h ? jl->h->host : "NOTRUN",

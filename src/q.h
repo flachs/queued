@@ -110,6 +110,7 @@ typedef enum
   DK_reply,     // reply of success
   DK_trunchdr,  // reply that header is incomplete
   DK_badmagic,  // reply that header had wrong magic info
+  DK_reject,    // reply that request has failed
   
   DK_syncecho,
   DK_echo,
@@ -318,7 +319,7 @@ static inline uint64_t get_tag_ui32x2_ui64(uint32_t *d)
 // pidfile.c
 void set_pid_dir(char *dirname);
 int  bad_magic(uint64_t magic);
-uint64_t get_magic_for_host(const char *hostname);
+int get_magic_for_host(const char *hostname, uint64_t *magic);
 void create_pid_file(char *hostname);
 uint64_t make_magic(uint64_t *magic);
 

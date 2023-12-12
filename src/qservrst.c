@@ -49,9 +49,7 @@ int terminator(conf_t *conf,const char *hostname,void *p)
   printlog("%s %s\n",msg,hostname);
   
   sendhdr_t hdr;
-  hdr.magic = get_magic_for_host(hostname);
-  if (! hdr.magic) return 0;
-  
+  if ( get_magic_for_host(hostname,&hdr.magic) ) return 0;
   hdr.uid   = getuid();
   hdr.gid   = getgid();
   hdr.kind  = kind;

@@ -1,3 +1,6 @@
+
+#define _GNU_SOURCE
+
 #include "q.h"
 
 #include <sys/types.h>
@@ -40,8 +43,7 @@ static char *make_jobdir(conf_t *conf,char *lhostname,
   size_t strlen_xtemp = 6;
   
   char queued_dir[strlen(pwent.pw_dir)+1+
-                  strlen(queuedd)+1+
-                  strlen_lhostname+strlen_xtemp+1+16];
+                  strlen(queuedd)+1];
   char *fpqueuedd = cpystring(queued_dir,pwent.pw_dir);
   fpqueuedd = cpystring(fpqueuedd, slash);
   fpqueuedd = cpystring(fpqueuedd, queuedd);
@@ -53,11 +55,9 @@ static char *make_jobdir(conf_t *conf,char *lhostname,
       return 0;
       }
     }
-  else
-    { // mkdir happened - allow user to own it
-    chown(queued_dir,uid,gid);
-    }
 
+  // mkdir happened - allow user to own it
+  chown(queued_dir,uid,gid);
   
   // create job directory
   char *jobid = cpystring(fpqueuedd, slash);
@@ -73,10 +73,15 @@ static char *make_jobdir(conf_t *conf,char *lhostname,
 
   // allow user the job dir.
   chown(queued_dir,uid,gid);
-  
-  // create job files
-  jobdir = cpystring(jobdir, slash);
 
+  int fd_jobdir = open(jobdirp,O_RDONLY|O_DIRECTORY|O_PATH);
+  if (fd_jobdir < 0) 
+    { // something went wrong
+    fprintf(stderr,"cant find job dir %s\n",jobdirp);
+    return 0;
+    }
+                       
+  // create job files
   // the parm file
   if (acmd)
     {
@@ -86,42 +91,44 @@ static char *make_jobdir(conf_t *conf,char *lhostname,
     for (int i=0;i<acmd;i++)
       b = cpystring(b,argv[i])+1; // cp parms
 
-    cpystring(jobdir,"parm");
-    FILE *parmfp = fopen(queued_dir,"w");
-    if (! parmfp)
+    int fd_parm = openat(fd_jobdir,"parm",O_WRONLY|O_CREAT,0666);
+    if ( fd_parm)
       {
       fprintf(stderr,"cant create parm %s\n",queued_dir);
+      close(fd_jobdir);
       return 0;
       }
   
-    fwrite(parmbuf,parmsize,1,parmfp);
-    fclose(parmfp);
-    }
-
-  // the cmd file
-  cpystring(jobdir,"cmd");
-  FILE *cmdfp = fopen(queued_dir,"w");
-  if (! cmdfp)
-    {
-    fprintf(stderr,"cant create cmd %s\n",queued_dir);
-    return 0;
+    write(fd_parm,parmbuf,parmsize);
+    close(fd_parm);
     }
 
   // open the stdin file
-  FILE *sinfp=0;
   if (dlc_option_value(NULL,"sin"))
     {
-    cpystring(jobdir,"stdin");
-    sinfp = fopen(queued_dir,"w");
-    if (! sinfp)
+    int fd_sin = openat(fd_jobdir,"sin",O_WRONLY|O_CREAT,0666);
+    if (fd_sin < 0)
       {
-      fclose(cmdfp);
-      fprintf(stderr,"cant create stdin %s\n",queued_dir);
+      fprintf(stderr,"cant create sin %s\n",queued_dir);
+      close(fd_jobdir);
       return 0;
       }
+
+    // copy stdin
+    int c;
+    char buf[32*1024],*pe = buf+sizeof(buf),*p=buf;
+    while ( (c=getchar()) != EOF )
+      {
+      *p++ = c;
+      if (p==pe)
+        write(fd_sin,p=buf,sizeof(buf));
+      }
+    if (p>buf)
+      write(fd_sin,buf,p-buf);
+    close(fd_sin);
     }
 
-  // build job control file
+  // build job control file xxx->cmd
   sendhdr_t hdr;
   hdr.magic = 0;
   hdr.uid   = uid;
@@ -134,19 +141,27 @@ static char *make_jobdir(conf_t *conf,char *lhostname,
   run_client_build_env_string(buffer,argn-acmd,argv+acmd,env,cwd);
   free(cwd);
 
-  fwrite(&hdr,sizeof(hdr),1,cmdfp);
-  fwrite(buffer,hdr.size,1,cmdfp);
-  fclose(cmdfp);
-  
-  // copy stdin
-  if (sinfp)
+  int fd_cmd = openat(fd_jobdir,"xxx",O_WRONLY|O_CREAT,0666);
+  if (fd_cmd<0)
     {
-    int c;
-    while ( (c=getchar()) != EOF )
-      putc(c,sinfp);
-    fclose(sinfp);
+    fprintf(stderr,"cant create xxx %s\n",queued_dir);
+    close(fd_jobdir);
+    return 0;
     }
 
+  write(fd_cmd,&hdr,sizeof(hdr));
+  write(fd_cmd,buffer,hdr.size);
+  close(fd_cmd);
+
+  if (renameat(fd_jobdir,"xxx",fd_jobdir,"cmd"))
+    {
+    fprintf(stderr,"cant rename xxx -> cmd %s\n",queued_dir);
+    close(fd_jobdir);
+    return 0;
+    }
+  
+  close(fd_jobdir);
+  
   size_t lenrv = strlen_lhostname+strlen_xtemp;
   char *rv = malloc(lenrv+1);
   strncpy(rv,jobid,lenrv);
@@ -189,32 +204,46 @@ int enqueue_client(conf_t *conf,int argn,char **argv,char **env)
   size_t jsize = strlen(jname);
   
   printf("jobid: %s %d %d\n",jname,uid,gid);
-  
-  // notify server of new job
-  int sockfd = open_client_socket(qmhn,port,"master");
-  if (sockfd<0) return 1;  
-  
-  sendhdr_t hdr;
-  hdr.magic = get_magic_for_host(qmhn);
+
+  sendhdr_t hdr,rdr;
   hdr.uid   = uid;
   hdr.gid   = gid;
   hdr.kind  = DK_enqueue;    // queue.c: server_enqueue
   hdr.size  = jsize+1;
   hdr.value[0] = jg;
-  
-  send(sockfd,&hdr,sizeof(hdr),0);
-  send(sockfd,jname,jsize+1,0);
+  rdr.kind  = DK_reject;
 
-  // recieve confirmation
-  recvn(sockfd,&hdr,sizeof(hdr),0);
+  int count;
+  for (count=0;count<3;count++)
+    {
+    if ( get_magic_for_host(qmhn,& hdr.magic) ) return 1 ;
   
-  char buffer[hdr.size+1];
-  recvn(sockfd,buffer,hdr.size,0);
-  close(sockfd);
+    // notify server of new job
+    int sockfd = open_client_socket(qmhn,port,"master");
+    if (sockfd<0) return 1;  
+  
+    send(sockfd,&hdr,sizeof(hdr),0);
+    send(sockfd,jname,jsize+1,0);
 
-  printf("sch %d\n",hdr.value[0]);
-  
-  return 0;
+    // recieve confirmation
+    recvn(sockfd,&rdr,sizeof(hdr),0);
+
+    char buffer[rdr.size+1];
+    recvn(sockfd,buffer,rdr.size,0);
+    close(sockfd);
+
+    // check if server accepted
+    if (rdr.kind == DK_reply)
+      {
+      printf("sch %d\n",rdr.value[0]);
+      return 0;
+      }
+
+    // maybe NFS was slow to show job dir -- try again
+    while (sleep(3));
+    }
+  fprintf(stderr,"cant schedule job\n");
+  return 1;
   }
 
 uid_t determine_uid(char *un,uid_t uid)

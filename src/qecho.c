@@ -3,24 +3,37 @@
 char *simple_request(const char *hostname,const char *message,
                      sendhdr_t *hdr,void *data)
   {
+  sendhdr_t orighdr = *hdr;
+  if (orighdr.uid==0)   orighdr.uid = getuid();
+  if (orighdr.gid==0)   orighdr.gid = getgid();
+
   char *retdata=0;
   retdata --;
   
-  hdr->magic = get_magic_for_host(hostname);
-  
   int port = getserviceport();
-  int sockfd = open_client_socket(hostname,port,message);
-  
-  if (sockfd<0) return retdata;
-  
-  if (hdr->uid==0)   hdr->uid = getuid() ;
-  if (hdr->gid==0)   hdr->gid = getgid();
 
-  send(sockfd,hdr,sizeof(*hdr),0);
-  if (hdr->size)
-    send(sockfd,data,hdr->size,0);
+  int badret = 0;
+  int sockfd = 0;
+  
+  while (1)
+    {
+    if (get_magic_for_host(hostname,& orighdr.magic))
+      return retdata;
+  
+    sockfd = open_client_socket(hostname,port,message);
+  
+    if (sockfd<0) return retdata;
+  
+    send(sockfd,&orighdr,sizeof(orighdr),0);
+    if (orighdr.size)
+      send(sockfd,data,orighdr.size,0);
     
-  recvn(sockfd,hdr,sizeof(*hdr),0);
+    recvn(sockfd,hdr,sizeof(*hdr),0);
+    if (hdr->magic != DK_badmagic) break;
+    if (badret++>2) return retdata;
+    while (sleep(3));
+    }
+    
   retdata = 0;
   if (hdr->size)
     {
@@ -48,21 +61,21 @@ void server_echo(server_thread_args_t *client)
 int echo_client(conf_t *conf,int argn,char **argv,char **env)
   {
   char *hostname = *argv++; argn--;
+  
+  sendhdr_t hdr;
+  if (get_magic_for_host(hostname,& hdr.magic)) return 1;
+  
+  hdr.uid   = getuid();
+  hdr.gid   = getgid();
+  hdr.kind  = DK_syncecho;
+  
   int port = getserviceport();
   int sockfd = open_client_socket(hostname,port,hostname);
   if (sockfd<0) return 1;
   
-  
   char *args = make_arg_string(argn,argv);
-  int     al = strlen(args);
+  hdr.size  = strlen(args)+1;
 
-  sendhdr_t hdr;
-  hdr.magic = get_magic_for_host(hostname);
-  hdr.uid   = getuid();
-  hdr.gid   = getgid();
-  hdr.kind  = DK_syncecho;
-  hdr.size  = al+1;
-  
   send(sockfd,&hdr,sizeof(hdr),0);
   send(sockfd,args,hdr.size,0);
 
@@ -193,10 +206,13 @@ int print_status(conf_t *conf,const char *hostname,void *showjobs)
       {
       parsed_cmd_t pc;
       sendhdr_t *hdr=get_job_cmd(r[i].jd,&pc);
-      fputc(' ',stdout);
-      fputs(pc.cmd,stdout);
-      free(pc.env);
-      free(hdr);
+      if (hdr)
+        {
+        fputc(' ',stdout);
+        fputs(pc.cmd,stdout);
+        free(pc.env);
+        free(hdr);
+        }
       }
     
     fputc('\n',stdout);
@@ -209,11 +225,23 @@ int status_client(conf_t *conf,int argn,char **argv,char **env)
   {
   char *rhostname = 0;
   char *showjobs = 0;
+  int interval,count=0;
+  
   char *p = 0;
   
   if (argn>0 && (p = strmatch(argv[0],"show=")))
     {
     if (strmatch(p,"jobs")) showjobs++;
+    argn--;
+    argv++;
+    }
+  
+  if (argn>0 && (p = strmatch(argv[0],"poll=")))
+    {
+    int conv = sscanf(p,"%d,%d",&interval,&count);
+    printf("here %d %d,%d\n",conv,interval,count);
+    if (conv==1) count= -1;
+    
     argn--;
     argv++;
     }
@@ -226,6 +254,13 @@ int status_client(conf_t *conf,int argn,char **argv,char **env)
   else
     rhostname="all";
 
+  while (count)
+    {
+    for_each_host(conf,rhostname,print_status,showjobs);
+    while (sleep(interval));
+    count = count>0 ? count -- : count;
+    }
+    
   return for_each_host(conf,rhostname,print_status,showjobs);
   }
 

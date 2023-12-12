@@ -160,6 +160,8 @@ sendhdr_t *get_job_cmd(char *dir,parsed_cmd_t *pc)
     free(cbuf);
     return NULL;
     }
+
+  if (!pc) return hdr; // only want the header
   
   int argn      = hdr->value[0];
   pc->cmd        = cbuf + sizeof(*hdr);
@@ -269,6 +271,13 @@ void server_runjob(server_thread_args_t *client)
 
   jl->tag = get_tag_ui32x2_ui64(hdr.value);
 
+  // have to wait for job file to be ready in nfs
+  sendhdr_t *chdr=0;
+  while (! chdr)
+    chdr = get_job_cmd(jl->dir,NULL);
+  free(chdr);
+
+  // now can read parms
   jl->nparms = read_parse_parms(jl->dir,&(jl->parms));
   jl->keep = 0;
   const char *keep = find_parm("keep",jl->nparms,jl->parms,onerror);

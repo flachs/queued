@@ -117,6 +117,8 @@ void act_on_job_in_ul(uidlink_t *ul,
   for (ji.jl=ul->head; ji.jl ; ji.jl = ji.jl->un)
     {
     ji.hdr = get_job_cmd(ji.jl->dir,&ji.pc);
+    if (! ji.hdr) continue;  // partially written -- doesnt count
+    
     if (job_match(&ji,rjm))
       (handler)(response,&ji);
     

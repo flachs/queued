@@ -10,6 +10,9 @@
 Done
 ====
 
+ * pid cache now stats for mtime, reloads if not 
+   current.  can kill/end/restart server and pid cache
+   will allow reestablish of communication.
  * implement security function via pid files.  Each
    server generates a random 64 and stores it in a pid
    file in an nfs shared dir.  setuid root client reads

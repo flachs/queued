@@ -716,6 +716,8 @@ int run_client_wait_for_connect(int sockfd,const char *which)
     sock = accept(sockfd,
                   (struct sockaddr *)&server.addr,
                   &server.alen);
+    if (sock<1) { if (0) perror("accept(qrun)"); continue; }
+
     size_t size = recvn(sock,&hdr,sizeof(hdr),0);
     if (size<sizeof(hdr) || bad_magic(hdr.magic))
       {
@@ -745,8 +747,9 @@ run_client_connect_info run_client_open_server(int wantpipe,
                                                int argn,char **argv,
                                                char **env)
   {
-  run_client_connect_info info;
+
   
+  run_client_connect_info info;
   int port = getserviceport();
   info.sgc = open_client_socket(hostname,port,NULL);
   info.sio = -1;
@@ -757,9 +760,14 @@ run_client_connect_info run_client_open_server(int wantpipe,
     fprintf(stderr,"cant connect to server %s\n",hostname);
     return info;
     }
-
+  
   sendhdr_t hdr;
-  hdr.magic = get_magic_for_host(hostname);
+  if (get_magic_for_host(hostname,& hdr.magic))
+    {
+    fprintf(stderr,"cant get magic for server %s\n",hostname);
+    return info;
+    }
+  
   hdr.uid   = getuid();
   hdr.gid   = getgid();
   hdr.kind  = DK_runcmd;

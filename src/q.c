@@ -80,6 +80,12 @@ void printlog(char *fmt,...)
   if (fp) fclose(fp);
   }
 
+void server_ctrlchandler (int sig)
+  {
+  exit(1);  // invoke atexit to remove pidfile
+  }
+
+
 int getserviceport()
   {
   return atoi( dlc_option_value(NULL,"p") );
@@ -294,13 +300,25 @@ void set_pid_dir_from_conf(conf_t *conf)
   set_pid_dir(piddir->name);
   }
 
+void install_sighandler(int signum, void (*handler)(int))
+  {
+  struct sigaction sa,old;
+  memset(&sa,0,sizeof(sa));
+  sa.sa_handler = handler;
+  sigemptyset(&sa.sa_mask);
+  sigaction(signum,&sa,&old);
+  }
+
 void server(conf_t *conf,int argn,char **argv)
   {
   launch_init();
+
   
   char *hostn = hostname();
   set_pid_dir_from_conf(conf);
   create_pid_file(hostn);
+
+  install_sighandler(SIGINT,server_ctrlchandler);  
   
   char *master = dlc_option_value(NULL,"master");  
 
@@ -324,7 +342,7 @@ void server(conf_t *conf,int argn,char **argv)
                          &client.alen);
     // fprintf(stderr,"client.sock %d\n",client.sock);
     
-    if (client.sock<1) { perror("accept");continue; }
+    if (client.sock<1) { if (0) perror("accept(q)"); continue; }
 
     int sync_task_done = !server_recv_header(&client);
     if (0) printlog("srh %d %d\n",sync_task_done,client.hdr.kind);
@@ -456,7 +474,7 @@ int main(int argn,char **argv,char **env)
   conf_t *port_service = conf_find(conf,"port","service",NULL);
   if (port_service)
     dlc_option_set_default(options,"p",port_service->name);
-  
+
   init_env_stuff(env);
   
   int ra=dlc_parse_args(options,argn,argv);
