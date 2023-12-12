@@ -92,7 +92,7 @@ static char *make_jobdir(conf_t *conf,char *lhostname,
       b = cpystring(b,argv[i])+1; // cp parms
 
     int fd_parm = openat(fd_jobdir,"parm",O_WRONLY|O_CREAT,0666);
-    if ( fd_parm)
+    if ( fd_parm<0 )
       {
       fprintf(stderr,"cant create parm %s\n",queued_dir);
       close(fd_jobdir);
@@ -338,6 +338,8 @@ int queue_client(conf_t *conf,
   memset(buf,0,hdr.size);
   
   job_match_spec_t *jms=(job_match_spec_t *)buf;
+  memset(buf,0,hdr.size);
+  
   jms->uid  = getuid();
   
   jms->beg  = (time_t)1<<(sizeof(time_t)*8-1);

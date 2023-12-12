@@ -102,7 +102,7 @@ int job_match(jobinfo_t *ji,re_job_match_spec_t *rjm)
   if ((spec & JMS_CMDSS ) && !jobcmd_match(ji,rjm))     return 0;
   if ((spec & JMS_CMDRE ) && !jobcmd_rematch(ji,rjm))   return 0;
   if ((spec & JMS_JG    ) && !jobgrp_match(ji,rjm))     return 0;
-  if ((spec & JMS_HOST  ) && !jobhost_match(ji,rjm))     return 0;
+  if ((spec & JMS_HOST  ) && !jobhost_match(ji,rjm))    return 0;
 
   return 1;
   }
