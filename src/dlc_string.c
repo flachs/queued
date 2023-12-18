@@ -368,6 +368,16 @@ void dlc_string_cep(dlc_string **tp,char *s,char *e)
   ts->l = needlength;
   }
 
+void dlc_string_ac(dlc_string **tp,int c)
+  {
+  int needlength = (*tp) ? (*tp)->l : 0;
+  needlength ++;
+
+  dlc_string *ts = dlc_string_rz(tp,needlength);
+
+  ts->t[ts->l++] = c;
+  }
+
 void dlc_string_cat(dlc_string **tp,const void *s)
   {
   dlc_nodeb *n = (dlc_nodeb *)s;

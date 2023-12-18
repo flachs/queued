@@ -101,6 +101,7 @@ void dlc_string_cpy(dlc_string **tp,const void *s);
 void dlc_string_cpe(dlc_string **tp,char *s,char *e);
 void dlc_string_cat(dlc_string **tp,const void *s);
 void dlc_string_cep(dlc_string **tp,char *s,char *e);
+void dlc_string_ac(dlc_string **tp,int c);
 void dlc_string_ins(dlc_string **tp,int point,void *s);
 void dlc_string_ine(dlc_string **tp,int point,char *s,char *e);
 void dlc_string_rep(dlc_string **tp,int point,int len,void *s);

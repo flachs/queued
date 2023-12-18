@@ -144,7 +144,7 @@ void mark_proc_inqueue()
 // cmd file is partially written.
 sendhdr_t *get_job_cmd(char *dir,parsed_cmd_t *pc)
   {
-  off_t cmdsize;
+  off_t cmdsize=0;
   int dfd = openjob(dir,"cmd",O_RDONLY,&cmdsize);
   
   if (cmdsize==0) return NULL;
@@ -203,7 +203,15 @@ void update_job_dir_when_done(joblink_t *jl,int status)
     char rmcmd[strlen(rm)+strlen(jl->dir)+1];
     char *arm=cpystring(rmcmd,rm);
     cpystring(arm,jl->dir);
-    system(rmcmd);
+    int tries=0;
+    int srv=0;
+    while (srv=system(rmcmd))
+      {
+      fprintf(stderr,"rm failed %d %d\n",srv,tries);
+      sleep(1);
+      if (tries>4) return;
+      tries++;
+      }
     }
   }
 

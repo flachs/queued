@@ -153,7 +153,7 @@ void cpydat(int sock,struct sockaddr *addr,socklen_t alen,
 void send_response(int sock,sendhdr_t *hdr,const void *data)
   {
   send(sock, hdr , sizeof(*hdr), 0);
-  
+
   if (data && hdr->size>0)
     send(sock, data, hdr->size, 0);
   

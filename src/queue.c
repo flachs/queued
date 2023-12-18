@@ -69,6 +69,7 @@ int openjob(const char *dir,const char *file,int flags,off_t *filesize)
   strcpy(pathname,dir);
   pathname[pathlen]='/';
   strcpy(pathname+pathlen+1,file);
+
   
   int fd = open(pathname,flags,0666);
   
@@ -81,8 +82,23 @@ int openjob(const char *dir,const char *file,int flags,off_t *filesize)
   if (filesize)
     {
     struct stat statbuf;
-    fstat(fd,&statbuf);
+    statbuf.st_size = 0;
 
+    int tries=0;
+    while (fstat(fd,&statbuf)) 
+      {
+      if (tries>30)
+        {
+        close(fd);
+        fprintf(stderr,"openjob(%d) %s %s %x %d\n",
+                tries,dir,file,flags,fd);
+        perror("fstat failed");
+        return -1;
+        }
+      usleep(10000);
+      tries++;
+      }
+    
     *filesize = statbuf.st_size;
     }
   
@@ -245,6 +261,67 @@ int send_kill(const char *host,joblink_t *jl)
   return hdr.value[3];
   }
 
+/* override host metrics from conf */
+typedef struct
+  {
+  int memory,threads,busy_start,busy_end;
+  } limits_t;
+
+void host_limits(limits_t *l,conf_t *conf,const char *host,statusinfomsg_t *si)
+  {
+  conf_t *limits = conf_find(conf,"limits",host,NULL);
+  l->memory = si->info.memory;
+  l->threads = si->info.threads;
+  l->busy_start = -1;  // sec in day
+  l->busy_end   = -1;
+  for (; limits ; limits=limits->next)
+    {
+    if (!strncmp(limits->name,"mem=",4))
+      {
+      char *suf=0;
+      int mem = strtol(limits->name+4,&suf,0);
+      if (suf && *suf=='M') mem*=1024;
+      if (suf && *suf=='G') mem*=1024*1024;
+      if (mem<l->memory) l->memory = mem;
+      }
+    if (!strncmp(limits->name,"threads=",8))
+      {
+      char *suf=0;
+      int thr = strtol(limits->name+8,&suf,0);
+      if (thr<l->threads) l->threads = thr;
+      }
+    if (!strncmp(limits->name,"cores=",6))
+      {
+      char *suf=0;
+      int thr = strtol(limits->name+6,&suf,0)*2;
+      if (thr<l->threads) l->threads = thr;
+      }
+    if (!strncmp(limits->name,"busy=",5))
+      {
+      char *suf=0;
+      int val = strtol(limits->name+5,&suf,10)*60*60;
+      if (suf>limits->name+5)
+        {
+        l->busy_start = val;
+        if (suf && *suf==':')
+          {
+          int m = strtol(suf+1,&suf,10);
+          l->busy_start += m*60;
+          }
+        if (suf && *suf)
+          {
+          l->busy_end = strtol(suf+1,&suf,10)*60*60;
+          if (*suf==':')
+            {
+            int m = strtol(suf+1,&suf,10);
+            l->busy_end += m*60;
+            }
+          }
+        }
+      }
+    }
+  }
+
 /* decide if a job should be scheduled on a host */
 int jl_fits_hl(conf_t *conf,
                hostlink_t *hl,
@@ -254,90 +331,46 @@ int jl_fits_hl(conf_t *conf,
   if (! jl) return 0;// no valid job
   // if cant get info, dont schedule  
 
-  conf_t *limits = conf_find(conf,"limits",hl->host,NULL);
-  int limit_memory = si->info.memory;
-  int limit_threads = si->info.threads;
-  int busy_start = -1;  // sec in day
-  int busy_end   = -1;
-  for (; limits ; limits=limits->next)
-    {
-    if (!strncmp(limits->name,"mem=",4))
-      {
-      char *suf=0;
-      int mem = strtol(limits->name+4,&suf,0);
-      if (suf && *suf=='M') mem*=1024;
-      if (suf && *suf=='G') mem*=1024*1024;
-      if (mem<limit_memory) limit_memory = mem;
-      }
-    if (!strncmp(limits->name,"threads=",8))
-      {
-      char *suf=0;
-      int threads = strtol(limits->name+8,&suf,0);
-      if (threads<limit_threads) limit_threads = threads;
-      }
-    if (!strncmp(limits->name,"cores=",6))
-      {
-      char *suf=0;
-      int threads = strtol(limits->name+6,&suf,0)*2;
-      if (threads<limit_threads) limit_threads = threads;
-      }
-    if (!strncmp(limits->name,"busy=",5))
-      {
-      char *suf=0;
-      busy_start = strtol(limits->name+5,&suf,10)*60*60;
-      if (suf && *suf==':')
-        {
-        int m = strtol(suf+1,&suf,10);
-        busy_start += m*60;
-        }
-      if (suf && *suf)
-        {
-        busy_end = strtol(suf+1,&suf,10)*60*60;
-        if (*suf==':')
-          {
-          int m = strtol(suf+1,&suf,10);
-          busy_end += m*60;
-          }
-        }
-      }
-    }
+  limits_t lim;
+  host_limits(&lim,conf,hl->host,si);
+  
 
   if (0) fprintf(stderr,"   sjhl-mem: %d %d %d\n",
-                 jl->mem,limit_memory,hl->used_memory);
+                 jl->mem,lim.memory,hl->used_memory);
 
   // dont schedule if host is busy
-  if (busy_end>busy_start)
+  if (lim.busy_end>lim.busy_start)
     {
     time_t now = time(NULL);
     struct tm *tm = localtime(&now);
     int nows  = tm->tm_sec + tm->tm_min*60 + tm->tm_hour*60*60;
-    if (nows>=busy_start && nows<=busy_end) return 0;
+    if (nows>=lim.busy_start && nows<=lim.busy_end) return 0;
     }
   
   // dont schedule if mem request is too big
-  if (jl->mem > limit_memory - hl->used_memory) return 0;
+  if (jl->mem > lim.memory - hl->used_memory) return 0;
 
   if (0)
     fprintf(stderr,"   sjhl-thr: %d %d %d\n",
-            jl->threads,limit_threads,hl->used_threads);
+            jl->threads,lim.threads,hl->used_threads);
 
   // threads request 
   int threads = jl->threads;
   if (threads==-1)     threads = 2*si->info.cores;
-  else if (threads==0) threads = limit_threads;
+  else if (threads==0) threads = lim.threads;
 
   // dont schedule if threads request is too big
   int available_threads_h = si->info.threads -
                             hl->used_threads -
                             si->runs[0].running;
-  int available_threads_l = limit_threads -
+  int available_threads_l = lim.threads -
                             hl->used_threads;
   
   if (threads > available_threads_h ||
       threads > available_threads_l ) return 0;
 
   if (0)
-    fprintf(stderr,"   sjhl-ok\n");
+    fprintf(stderr,"   sjhl-ok %d\n",threads);
   return threads;
   }
 

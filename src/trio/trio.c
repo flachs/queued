@@ -1,6 +1,6 @@
 /*************************************************************************
  *
- * $Id: trio.c,v 1.2 2020/07/16 17:11:55 flachs Exp $
+ * $Id: trio.c,v 1.3 2023/12/18 14:57:07 flachs Exp $
  *
  * Copyright (C) 1998, 2009 Bjorn Reese and Daniel Stenberg.
  *
@@ -897,7 +897,7 @@ typedef struct _trio_userdef_t {
  *
  *************************************************************************/
 
-static TRIO_CONST char rcsid[] = "@(#)$Id: trio.c,v 1.2 2020/07/16 17:11:55 flachs Exp $";
+static TRIO_CONST char rcsid[] = "@(#)$Id: trio.c,v 1.3 2023/12/18 14:57:07 flachs Exp $";
 
 #if TRIO_FEATURE_FLOAT
 /*
@@ -4120,18 +4120,8 @@ TRIO_ARGS2((self, output),
 
   if ((char) output )
     {
-    dlc_string **tp = (dlc_string **)self->location;
-    
-    int needlength = (*tp) ? (*tp)->l : 0;
-    needlength += 1;
-  
-    dlc_string *ts = dlc_string_rz(tp,needlength);
-
-    char *p=ts->t+ts->l;
-    *p++ = (char)output;
-    *p=0;
-  
-    ts->l = needlength;
+    dlc_string **tp = (dlc_string **)(self->location);
+    dlc_string_ac(tp,output);
     }
   
   self->processed++;

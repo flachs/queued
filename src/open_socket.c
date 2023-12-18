@@ -15,7 +15,7 @@ size_t recvn(int sock,void *b,size_t len,int flags)
   size_t bytes = 0;
   while (len>0)
     {
-    ssize_t tb = recv(sock,b,len,flags);
+    ssize_t tb = recv(sock,b+bytes,len,flags);
     if (tb<0)
       {
       if (bytes) return(bytes);
@@ -72,14 +72,8 @@ int open_server_socket(int port)
 
 int connected_socket(in_addr_t in_addr,int server_port)
   {
-  struct protoent *protoent = getprotobyname("tcp");
-  if (protoent == NULL)
-    {
-    perror("getprotobyname");
-    abort();
-    }
-    
-  int sockfd = socket(AF_INET, SOCK_STREAM, protoent->p_proto);
+  // getprotobyname is unreliable.  Just use the value 6
+  int sockfd = socket(AF_INET, SOCK_STREAM, 6); // TCP
   if (sockfd == -1)
     {
     perror("socket");
@@ -101,6 +95,38 @@ int connected_socket(in_addr_t in_addr,int server_port)
   return sockfd;
   }
 
+typedef struct addrce_s
+  {
+  struct addrce_s *n;
+  in_addr_t a;
+  char name[];
+  } addrce_t;
+
+addrce_t *in_addr_h=0;
+
+in_addr_t get_in_addr(char *name)
+  {
+  for (addrce_t *p=in_addr_h;p;p=p->n)
+    if (!strcmp(p->name,name)) return p->a;
+
+  
+  struct addrinfo *res;
+  if (getaddrinfo(name,NULL,NULL,&res))
+    {
+    fprintf(stderr, "error: gethostbyname(\"%s\")\n", name);
+    return INADDR_NONE;
+    }
+  addrce_t *n = malloc(sizeof(addrce_t)+strlen(name)+1);
+  strcpy(n->name,name);
+  struct sockaddr_in *sa = (struct sockaddr_in *)(res->ai_addr);
+  n->a = sa->sin_addr.s_addr;
+  n->n = in_addr_h;
+  in_addr_h = n;
+  freeaddrinfo(res);
+  return n->a;
+  }
+
+  
 int open_client_socket(const char *serverspec,int server_port,const char *msg)
   {
   char *server_hostname = STRDUPA(serverspec);
@@ -108,18 +134,7 @@ int open_client_socket(const char *serverspec,int server_port,const char *msg)
   
   if (server_portnum) *server_portnum++ = 0;
 
-  struct addrinfo *res;
-  if (getaddrinfo(server_hostname,server_portnum,
-                  NULL,&res))
-    {
-    fprintf(stderr, "error: gethostbyname(\"%s\")\n", server_hostname);
-    return -1;
-    }
-
-  struct sockaddr_in *sa = (struct sockaddr_in *)(res->ai_addr);
-  in_addr_t in_addr = sa->sin_addr.s_addr;
-
-  freeaddrinfo(res);
+  in_addr_t in_addr = get_in_addr(server_hostname);
 
   int sockfd = connected_socket(in_addr,server_port);
 

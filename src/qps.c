@@ -7,13 +7,18 @@
    are unrelated */
 
 // a process entry
+// needs to be greater than TASK_COMM_LEN, 
+// TS_COMM_LEN is 32 in taskstats.h so would pick that,
+// but round up so that entry is 128 bytes.
+#define MAX_COMLEN (72)
 typedef struct proctabe_s
   {
   int next,chhead;
-  unsigned int uid,pid,ppid,state,tty,threads;
+  unsigned int uid,pid,ppid,tty,threads;
+  unsigned char state;
   uint64_t tag,vsize;
   char *top;
-  char com[256];
+  char com[MAX_COMLEN];
   } proctabe_t;
 
 // a table of process entries
@@ -56,7 +61,8 @@ int recieve_proc_entry(void *arg,pid_t pid,proc_pid_stat_t *procp)
     p = &pt->t[pt->n++];
     p->pid = pid;
     p->tty = procp->tty;
-    strcpy(p->com,procp->cmd);
+    strncpy(p->com,procp->cmd,MAX_COMLEN-1);
+    p->com[MAX_COMLEN]=0;
     }
   else
     {
@@ -81,6 +87,10 @@ void build_proc_tree()
   {
   int nde = proctab.n;
   proctabe_t *pt = proctab.t;
+
+  // erase previous linked lists
+  for (int i=0;i<nde;i++) pt[i].chhead = pt[i].next = -1;
+
   for (int i=1;i<nde;i++)
     {
     int pi = find_pid_index(proctab.t,proctab.n,pt[i].ppid);
@@ -162,9 +172,8 @@ int mark_proc_inq(int pid,uint64_t tag,char *dir,uid_t uid,int ind)
   // table index
   int pi = (ind==0) ? find_pid_index(pt,proctab.n,pid) : pid;
   if (pi<0)
-    {
-    if (0) print_proc_table("/tmp/proctab");
-    abort();
+    { // process is gone, but not yet removed from launched_pids
+    return 0;
     }
 
   pt[pi].tag=tag;
@@ -184,6 +193,7 @@ int mark_proc_inq(int pid,uint64_t tag,char *dir,uid_t uid,int ind)
   int it = pt[pi].chhead;
   for ( ; it>=0; it = pt[it].next)
     mark_proc_inq(it,tag,dir,uid,ind+2);
+  return 0;
   }
 
 /* read and catagorize processes */
