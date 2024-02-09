@@ -376,6 +376,7 @@ void dlc_string_ac(dlc_string **tp,int c)
   dlc_string *ts = dlc_string_rz(tp,needlength);
 
   ts->t[ts->l++] = c;
+  ts->t[ts->l] = 0;
   }
 
 void dlc_string_cat(dlc_string **tp,const void *s)
