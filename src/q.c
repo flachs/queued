@@ -26,6 +26,7 @@ optdes options[] =
     { "term=%s"   ,"server terminate on hostname/group",NULL },
     { "e"         ,"enqueue job",NULL },
     { "l"         ,"list queue",NULL },
+    { "t"         ,"list tokens",NULL },
     { "d"         ,"delete job",NULL },
     { "s"         ,"probe status",NULL },
     { NULL, NULL, NULL },
@@ -258,6 +259,7 @@ void *server_thread(void *va)
     case DK_runjob:     server_runjob(a);    return 0; // master to server
     case DK_killjob:    server_killjob(a);   return 0; // master to server
     case DK_listque:    server_list(a);      return 0; // cl->master
+    case DK_listtokens: server_tokens(a);    return 0; // cl->master
     case DK_gettime:    // cl or master to master or server
     case DK_getwho:     // cl to master or server
     case DK_getuptime:  // cl to master or server
@@ -313,17 +315,16 @@ void server(conf_t *conf,int argn,char **argv)
   {
   launch_init();
 
-  
   char *hostn = hostname();
   set_pid_dir_from_conf(conf);
+
+  char *master = dlc_option_value(NULL,"master");  
+  int iammaster = ! strcmp(master,hostn);
+  if (iammaster) build_token_table(conf);
+  
   create_pid_file(hostn);
 
   install_sighandler(SIGINT,server_ctrlchandler);  
-  
-  char *master = dlc_option_value(NULL,"master");  
-
-  int iammaster = ! strcmp(master,hostn);
-  
   
   //printlog("%s\n",__FUNCTION__);
   int server_sockfd = open_server_socket( getserviceport() );
@@ -348,8 +349,6 @@ void server(conf_t *conf,int argn,char **argv)
     if (0) printlog("srh %d %d\n",sync_task_done,client.hdr.kind);
     if (sync_task_done)
       { // synchronous tasks are handled already
-      close(client.sock);
-
       if (server_restart_req)
         {
         close(server_sockfd);
@@ -436,6 +435,7 @@ int client(conf_t *conf,char *prog,
     { "e"       , enqueue_client   ,
       "d"       , dequeue_client   ,
       "l"       , listqueue_client ,
+      "t"       , listtokens_client ,
       "s"       , status_client    ,
       "restart" , restart_client   ,
       "term"    , terminate_client };

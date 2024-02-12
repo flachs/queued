@@ -179,7 +179,6 @@ int dequeue_job(joblink_t *jl)
   hostlink_t *hl = jl->h;
   if (!hl)
     { // not running -- just unlink it
-    remove_link(jl,h);  // unlink it from host list
     remove_link(jl,u);  // unlink it from uid list
     update_job_dir_when_done(jl,-1);
     return 0;
@@ -231,8 +230,6 @@ void recv_acton_reply(server_thread_args_t *client,
   hdr.kind = DK_reply;
   send_response(client->sock,&hdr,hdr.size ? response->t : NULL);
   dlc_string_free(&response);
-  
-  close(client->sock);
   }
 
 // dequeue request... returns string to client in
@@ -261,5 +258,28 @@ void list_a_job(dlc_string **resp,jobinfo_t *ji)
 void server_list(server_thread_args_t *client)
   {
   recv_acton_reply(client,list_a_job);
+  }
+
+// list tokens request... returns string to client in
+// enqueue.c: listtokens_client
+void server_tokens(server_thread_args_t *client)
+  {
+  dlc_string *response=0;
+  sendhdr_t hdr = client->hdr;
+  int argn = hdr.value[0];
+  char buf[hdr.size];
+  job_match_spec_t *jms=(job_match_spec_t *)buf;
+  
+  recvn(client->sock,buf,hdr.size,0);  // have args
+
+  void dlc_tokens(dlc_string **stream);
+  dlc_tokens(&response);
+  
+  hdr.size = dlc_string_len(response);
+  if (hdr.size>0) hdr.size ++;
+  
+  hdr.kind = DK_reply;
+  send_response(client->sock,&hdr,hdr.size ? response->t : NULL);
+  dlc_string_free(&response);
   }
 

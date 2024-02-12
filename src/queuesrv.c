@@ -296,7 +296,6 @@ void server_runjob(server_thread_args_t *client)
   hdr.kind = DK_reply;
   hdr.size = 0;
   send_response(sock,&hdr,NULL);
-  close(sock);
 
   // run the job
   launch_control(jl);
@@ -335,7 +334,6 @@ void server_killjob(server_thread_args_t *client)
   hdr.value[3] = error;
   
   send_response(sock,&hdr,NULL);
-  close(sock);
   }
 
 

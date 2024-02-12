@@ -29,10 +29,11 @@ hostlink_t *get_host_state(const char *host)
   for (; p ; p = p->hn)
     if (! strcmp(p->host,host)) return p;
 
-  p = calloc(sizeof(hostlink_t),1);
+  p = calloc(sizeof(hostlink_t)+strlen(host)+1,1);
+  strcpy(p->host,host);
+
   add_link_to_head(&hostlist,p,h);
 
-  p->host = host;
   return p;
   }
 

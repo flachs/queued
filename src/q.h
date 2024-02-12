@@ -107,10 +107,10 @@ typedef struct
 // message types
 typedef enum
   {
-  DK_reply,     // reply of success
-  DK_trunchdr,  // reply that header is incomplete
-  DK_badmagic,  // reply that header had wrong magic info
-  DK_reject,    // reply that request has failed
+  DK_reply,       // reply of success
+  DK_trunchdr,    // reply that header is incomplete
+  DK_badmagic,    // reply that header had wrong magic info
+  DK_reject,      // reply that request has failed
   
   DK_syncecho,
   DK_echo,
@@ -118,28 +118,30 @@ typedef enum
   DK_restart,
   DK_terminate,
   
-  DK_gettime,   // cl or master to master or server
-  DK_timerep,   // reply
+  DK_gettime,     // cl or master to master or server
+  DK_timerep,     // reply
   
-  DK_getwho,    // cl to master or server
+  DK_getwho,      // cl to master or server
   DK_whorep,
   
-  DK_getuptime, // cl to master or server
+  DK_getuptime,   // cl to master or server
   DK_uptime,
   
-  DK_getstatus,    // cl to master or master to server
+  DK_getstatus,   // cl to master or master to server
   DK_status,
   
-  DK_runcmd,    // cl to server
-  DK_rescode,   // server to cl
+  DK_runcmd,      // cl to server
+  DK_rescode,     // server to cl
   
-  DK_enqueue,   // cl to master
-  DK_dequeue,   // cl to master
-  DK_listque,   // cl to master
-  DK_runjob,    // master to server
-  DK_killjob,   // master to server
-  DK_jobdone,   // server to master
-  DK_pause  ,   // server to master
+  DK_enqueue,     // cl to master
+  DK_dequeue,     // cl to master
+  DK_listque,     // cl to master
+  DK_listtokens,  // cl to master
+  
+  DK_runjob,      // master to server
+  DK_killjob,     // master to server
+  DK_jobdone,     // server to master
+  DK_pause  ,     // server to master
   } datakind_t;
 
 // header for messages
@@ -214,10 +216,10 @@ typedef struct hostlink_s
   struct hostlink_s *hn,*hp;      // host next and previous
   struct joblink_s  *head,*tail;  // list of jobs on host
   struct hostlist_s *h;           // pointer head of host list
-  const char *host;               // name of host
   unsigned int used_threads,      // how many threads are allocated
                used_memory,       // how much memory is allocated
                jobs_running;      // how many jobs are running
+  char host[];                    // name of host
   } hostlink_t;
 
 // list for user info
@@ -316,6 +318,15 @@ static inline uint64_t get_tag_ui32x2_ui64(uint32_t *d)
 
 #define clear(it) memset(&it,0,sizeof(it))
 
+// #include "closer.h"
+  
+// tokens.c
+void print_tokens(FILE *stream);
+void build_token_table(conf_t *conf);
+int  check_tokens(joblink_t *jl);
+void claim_tokens(joblink_t *jl);
+void release_tokens(joblink_t *jl);
+
 // pidfile.c
 void set_pid_dir(char *dirname);
 int  bad_magic(uint64_t magic);
@@ -407,9 +418,11 @@ void server_dequeue(server_thread_args_t *client);
 client_func_t enqueue_client;
 client_func_t dequeue_client;
 client_func_t listqueue_client;
+client_func_t listtokens_client;
 int openjob(const char *dir,const char *file,int flags,off_t *filesize);
 void server_lsq(server_thread_args_t *client);
 void server_list(server_thread_args_t *client);
+void server_tokens(server_thread_args_t *client);
 
 // qrun.c
 char *strmatchany(char *b,...);

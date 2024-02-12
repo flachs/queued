@@ -372,3 +372,11 @@ int dequeue_client(conf_t *conf,int argn,char **argv,char **env)
   return queue_client(conf,argn,argv,env,
                       "dequeue",DK_dequeue);// dequeue.c: server_dequeue
   }
+
+int listtokens_client(conf_t *conf,int argn,char **argv,char **env)
+  {
+  return queue_client(conf,argn,argv,env,
+                      "listqueue",DK_listtokens);// queue.c: server_lsq
+  }
+
+

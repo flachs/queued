@@ -30,6 +30,7 @@ char *simple_request(const char *hostname,const char *message,
     
     recvn(sockfd,hdr,sizeof(*hdr),0);
     if (hdr->magic != DK_badmagic) break;
+    close(sockfd);
     if (badret++>2) return retdata;
     while (sleep(3));
     }
@@ -55,7 +56,6 @@ void server_echo(server_thread_args_t *client)
   
   recvn(sock,buffer,hdr.size,0);
   send_response(sock,&hdr,buffer);
-  close(sock);
   }
 
 int echo_client(conf_t *conf,int argn,char **argv,char **env)
@@ -115,7 +115,6 @@ void server_status(server_thread_args_t *client)
   // x idle - proj/src/xprintidle
 
   send_response(sock,&hdr,si);
-  close(sock);
   }
 
 char *formatuptime(char *p,time_t upt)

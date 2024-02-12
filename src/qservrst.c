@@ -13,7 +13,6 @@ void server_restart(server_thread_args_t *client)
   hdr.size = 0;
   
   send_response(sock,&hdr,NULL);
-  close(sock);
   }
 
 void server_terminate(server_thread_args_t *client)
@@ -29,7 +28,6 @@ void server_terminate(server_thread_args_t *client)
   hdr.size = 0;
   
   send_response(sock,&hdr,NULL);
-  close(sock);
   }
 
 int terminator(conf_t *conf,const char *hostname,void *p)

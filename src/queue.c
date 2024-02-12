@@ -72,13 +72,15 @@ int openjob(const char *dir,const char *file,int flags,off_t *filesize)
 
   
   int fd = open(pathname,flags,0666);
-  
   if (fd<0)
     {
     if (filesize) *filesize = 0;
     return fd;
     }
 
+#ifdef regfd    
+  regfd("open",fd);
+#endif  
   if (filesize)
     {
     struct stat statbuf;
@@ -328,36 +330,39 @@ int jl_fits_hl(conf_t *conf,
                statusinfomsg_t *si,
                joblink_t *jl)
   {
-  if (! jl) return 0;// no valid job
+  int debug=0;
+  
   // if cant get info, dont schedule  
+  if (! jl) return 0;// no valid job
 
   limits_t lim;
   host_limits(&lim,conf,hl->host,si);
   
-
-  if (0) fprintf(stderr,"   sjhl-mem: %d %d %d\n",
-                 jl->mem,lim.memory,hl->used_memory);
-
   // dont schedule if host is busy
   if (lim.busy_end>lim.busy_start)
     {
     time_t now = time(NULL);
     struct tm *tm = localtime(&now);
     int nows  = tm->tm_sec + tm->tm_min*60 + tm->tm_hour*60*60;
+    
+    if (debug) fprintf(stderr,"   sjhl-busy(%s): %d %d %d\n",
+                     hl->host,nows,lim.busy_end,lim.busy_start);
+
     if (nows>=lim.busy_start && nows<=lim.busy_end) return 0;
     }
   
   // dont schedule if mem request is too big
+  if (debug) fprintf(stderr,"   sjhl-mem(%s): %d %d %d\n",
+                     hl->host,jl->mem,lim.memory,hl->used_memory);
+
   if (jl->mem > lim.memory - hl->used_memory) return 0;
 
-  if (0)
-    fprintf(stderr,"   sjhl-thr: %d %d %d\n",
-            jl->threads,lim.threads,hl->used_threads);
+  if (debug) fprintf(stderr,"   sjhl-thr(%s): %d %d %d\n",
+                     hl->host,jl->threads,lim.threads,hl->used_threads);
 
   // threads request 
   int threads = jl->threads;
-  if (threads==-1)     threads = 2*si->info.cores;
-  else if (threads==0) threads = lim.threads;
+  if (threads==0) threads = lim.threads;
 
   // dont schedule if threads request is too big
   int available_threads_h = si->info.threads -
@@ -389,6 +394,8 @@ int pick_job_hl(conf_t *conf,
                 statusinfomsg_t *si,
                 hostpick_t *hp)
   {
+  int debug = 0;
+  
   joblink_t *jl = hp->jl;
   
   int threads = jl_fits_hl(conf,hl,si,jl);
@@ -401,26 +408,23 @@ int pick_job_hl(conf_t *conf,
     {
     if (hp->memavail > si->stat.memavail)
       {
-      if (0)
-        fprintf(stderr,"  host %s has more memavail than %s\n",
-                hp->hl->host,hl->host);
+      if (debug) fprintf(stderr,"  host %s has more memavail than %s\n",
+                         hp->hl->host,hl->host);
       return 0;
       }
     
     if (hp->thravail > ath)
       {
-      if (0)
-        fprintf(stderr,"  host %s has more thravail than %s\n",
-                hp->hl->host,hl->host);
+      if (debug) fprintf(stderr,"  host %s has more thravail than %s\n",
+                         hp->hl->host,hl->host);
       return 0;
       }
-    if (0)
-      fprintf(stderr,"  host %s is not better than %s\n",
-              hp->hl->host,hl->host);
+    if (debug) fprintf(stderr,"  host %s is not better than %s\n",
+                       hp->hl->host,hl->host);
     }
   else
     {
-    if (0) fprintf(stderr,"  first host %s\n",hl->host);
+    if (debug) fprintf(stderr,"  first host %s\n",hl->host);
     }
   
   // yes it is better than hl
@@ -431,7 +435,7 @@ int pick_job_hl(conf_t *conf,
 
   // if hl is completely idle -- just schedule it
   int goodenough = hl->jobs_running==0 && si->user.users==0;
-  if (goodenough)
+  if (debug && goodenough)
     {
     fprintf(stderr,"  goodenough %s\n",hl->host);
     }
@@ -452,6 +456,8 @@ int schedule_job_hl(conf_t *conf,
   // fprintf(stderr,"scheduling %p %s on %p %s\n",jl,jl->dir,hl,hl->host);
   
   jl->threads = threads;
+
+  claim_tokens(jl);
   
   hl->used_memory += jl->mem;
   hl->used_threads += jl->threads;
@@ -487,6 +493,8 @@ int pick_job_host(conf_t *conf,const char *host,void *info)
   joblink_t *jl = hp->jl;
   statusinfomsg_t *si = get_host_status(host,0);
   
+  if (!si) return 0;   // get_host_status failed...
+  
   if (0) fprintf(stderr,"sjh: %s %s %d\n",jl->dir,host,si->info.cores);
 
   if (si->info.cores==0) return 0;   // get_host_status failed...
@@ -499,6 +507,8 @@ int pick_job_host(conf_t *conf,const char *host,void *info)
 int schedule_job(conf_t *conf,joblink_t *jl)
   {
   hostpick_t hp;
+
+  if (!check_tokens(jl)) return 0;
   
   hp.jl=jl;
   hp.hl=0;
@@ -575,7 +585,6 @@ void server_enqueue(server_thread_args_t *client)
     hdr.kind = DK_reject;
     hdr.size = 0;
     send_response(sock,&hdr,NULL);
-    close(sock);
     return;
     }
   
@@ -599,7 +608,6 @@ void server_enqueue(server_thread_args_t *client)
   hdr.value[0] = sch_immed;
   
   send_response(sock,&hdr,NULL);
-  close(sock);
   }
 
 
@@ -657,8 +665,9 @@ void schedule_host(conf_t *conf,hostlink_t *hl)
       joblink_t *jl;
       int threads;
       
-      for (jl=uid[ui]->tail ; jl ; jl = jl->up) // oldest job first
-        if ( !jl->h && (threads = jl_fits_hl( conf, hl, si, jl ) ))
+      for (jl=uid[ui]->head ; jl ; jl = jl->un) // oldest job first
+        if ( !jl->h && check_tokens(jl) &&
+             (threads = jl_fits_hl( conf, hl, si, jl ) ))
           {
           schedule_job_hl(conf,hl,jl,threads);
           onedone ++;
@@ -680,6 +689,8 @@ void server_jobdone(server_thread_args_t *client)
   if (0) fprintf(stderr,"sjd: %p\n",jl);
   
   // give back resources
+  release_tokens(jl);
+  
   hostlink_t *hl = jl->h;
   hl->used_memory  -= jl->mem;
   hl->used_threads -= jl->threads;
@@ -696,7 +707,6 @@ void server_jobdone(server_thread_args_t *client)
   hdr.kind = DK_reply;
   hdr.size = 0;
   send_response(sock,&hdr,NULL);
-  close(sock);
 
   schedule_host(client->conf,hl);
   }
@@ -737,6 +747,10 @@ void server_lsq(server_thread_args_t *client)
   dlc_string *response=0;
   sendhdr_t hdr = client->hdr;
   parsed_cmd_t pc;
+  void dlc_tokens(dlc_string **stream);
+
+  dlc_string_cat(&response,"tokens:\n");
+  dlc_tokens(&response);
 
   dlc_string_cat(&response,"machines:\n");
   
@@ -773,7 +787,5 @@ void server_lsq(server_thread_args_t *client)
   hdr.kind = DK_reply;
   send_response(client->sock,&hdr,response->t);
   dlc_string_free(&response);
-  
-  close(client->sock);
   }
 

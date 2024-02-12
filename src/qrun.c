@@ -323,8 +323,6 @@ void setup_stream(int dfd,int fd,
                   const char *fn,  // file in job dir
                   int flags)
   {
-  close(dfd);
-  
   if (fd>=0)
     {
     dup2(fd, dfd);

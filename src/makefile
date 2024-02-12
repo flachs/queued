@@ -1,6 +1,6 @@
 CFLAGS = -g
 
-OFILES = dlc_option.o open_socket.o qecho.o qrun.o qconf.o queue.o enqueue.o queuesrv.o qservrst.o cpuinfo.o dlc_string.o proc.o tty_stat.o pidfile.o uid.o host.o joblink.o qdequeue.o time_format.o runimm.o qps.o
+OFILES = dlc_option.o open_socket.o qecho.o qrun.o qconf.o queue.o enqueue.o queuesrv.o qservrst.o cpuinfo.o dlc_string.o proc.o tty_stat.o pidfile.o uid.o host.o joblink.o qdequeue.o time_format.o runimm.o tokens.o qps.o
 
 CFILES = $(OFILES:.o=.c)
 
@@ -22,6 +22,8 @@ q: q.c dlc_option.h q.h $(OFILES) trio/libtrio.a
 
 trio/libtrio.a : dlc_string.o dlc_string.h
 	cd trio ; make
+
+tokens.o : tokens.c q.h
 
 qservrst.o: qservrst.c q.h
 
