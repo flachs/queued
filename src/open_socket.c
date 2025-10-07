@@ -43,7 +43,7 @@ int open_server_socket(int port)
   server_address.sin_addr.s_addr = htonl(INADDR_ANY);
   server_address.sin_port = htons(port);
 
-  int server_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  int server_sockfd = socket(AF_INET, SOCK_STREAM, 6);// /etc/protocols:TCP=6
   int option=1;
   setsockopt(server_sockfd,SOL_SOCKET,SO_REUSEPORT,&option,sizeof(option));
   
@@ -73,7 +73,7 @@ int open_server_socket(int port)
 int connected_socket(in_addr_t in_addr,int server_port)
   {
   // getprotobyname is unreliable.  Just use the value 6
-  int sockfd = socket(AF_INET, SOCK_STREAM, 6); // TCP
+  int sockfd = socket(AF_INET, SOCK_STREAM, 6); // /etc/protocols:TCP=6
   if (sockfd == -1)
     {
     perror("socket");
@@ -81,6 +81,8 @@ int connected_socket(in_addr_t in_addr,int server_port)
     }
 
   struct sockaddr_in sockaddr_in;
+  memset(&sockaddr_in,0,sizeof(sockaddr_in));
+
   sockaddr_in.sin_addr.s_addr = in_addr;
   sockaddr_in.sin_family = AF_INET;
   sockaddr_in.sin_port = htons(server_port);

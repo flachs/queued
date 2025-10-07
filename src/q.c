@@ -334,6 +334,8 @@ void server(conf_t *conf,int argn,char **argv)
   while(1)
     {  // handle incoming connections
     server_thread_args_t client;
+    memset(&client,0,sizeof(client));
+
     client.conf   = conf;
     client.master = iammaster;
     client.alen = sizeof(client.addr);

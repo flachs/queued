@@ -307,6 +307,31 @@ int kill_job(uint64_t tag)
   {
   int i = find_launched_tag(tag);
 
+  /* there is a interval in qrun.c/server_child_fork between fork and
+     setpgid where the sub process and the server share a process
+     group.  killing the sub process during this interval delivers a
+     signal also to the server.  so we have to wait for the target
+     process to exit the process group of the server before killing
+     it.
+
+     this happens when dq multiple jobs in fifo order.  killing a job
+     opens a job slot, which is filled by a job that will be soon
+     dq. */
+  
+  pid_t srvpg = getpgid(0);
+  pid_t tgtpg = getpgid(launched_pids[i].pid);
+
+  int tries=0;
+  while (tgtpg == srvpg)
+    {
+    fprintf(stderr,"avoid suicide %d %d\n",tgtpg,launched_pids[i].pid,tries);
+    sleep(1);
+    if (tries>4) return EDEADLK;
+    tries++;
+    
+    tgtpg = getpgid(launched_pids[i].pid);
+    }
+  
   if (0)
     printf("kj: %d %d %s\n",
          i,launched_pids[i].pid,launched_pids[i].jl->dir);
