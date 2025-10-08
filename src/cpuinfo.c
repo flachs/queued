@@ -66,9 +66,8 @@ computerinfo_t readcpuinfo()
     
     char *colon = strchr(buf,':');
     char *efn = strbackspc(colon-1);
-    if (fnmatch("MemTotal",buf,efn))
-      info.memory = atoi(colon+1)/(1 K);
-
+    if (fnmatch("MemTotal",buf,efn)) // in KB
+      info.memory = atoi(colon+1)/(1 K); // in MB
     }
   
   fclose(fp);  

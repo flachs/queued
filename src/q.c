@@ -45,7 +45,7 @@ void print_help(optdes *opt_des,char *name,char *msg)
           "    parms               description\n"
           "    group=host_group    machines to run on\n"
           "    keep=(error,always) when not to delete the run dir\n"
-          "    mem=KBytes          memory needed for run\n"
+          "    mem=MBytes          memory needed for run\n"
           "    threads=value       threads wanted (0:machine, -1:core)\n"
           "\nlist queue: -l [parm=value]\n"
           "    parms               description\n"

@@ -148,13 +148,33 @@ const char *find_parm(const char *name,
   }
 
 // search parms for a parm - return integer value
+typedef struct multsuf_s
+  {
+  char s;
+  int m;
+  } multsuf_t;
+
 int find_int_parm(const char *name,
                   int nparms, char **parml,
-                  int def)
+                  int def,multsuf_t *suftab)
   {
   for (int i=0;i<nparms;i++)
     if (! strcmp(name,parml[2*i]))
-      return atoi(parml[2*i+1]);
+      {
+      char *suf=0;
+      int val = strtol(parml[2*i+1],&suf,0);
+      if (suf)
+        for (multsuf_t *s=suftab;s;s++) 
+          {
+          if (s->s==0) break;
+          if (*suf==s->s)
+            {
+            suf++;
+            val*=s->m;
+            }
+          }
+      return val;
+      }
   
   return def;
   }
@@ -272,7 +292,7 @@ typedef struct
 void host_limits(limits_t *l,conf_t *conf,const char *host,statusinfomsg_t *si)
   {
   conf_t *limits = conf_find(conf,"limits",host,NULL);
-  l->memory = si->info.memory;
+  l->memory = si->info.memory; // MB
   l->threads = si->info.threads;
   l->busy_start = -1;  // sec in day
   l->busy_end   = -1;
@@ -282,8 +302,7 @@ void host_limits(limits_t *l,conf_t *conf,const char *host,statusinfomsg_t *si)
       {
       char *suf=0;
       int mem = strtol(limits->name+4,&suf,0);
-      if (suf && *suf=='M') mem*=1024;
-      if (suf && *suf=='G') mem*=1024*1024;
+      if (suf && *suf=='G') mem*=1024;
       if (mem<l->memory) l->memory = mem;
       }
     if (!strncmp(limits->name,"threads=",8))
@@ -568,6 +587,12 @@ joblink_t *recieve_jobinfo(sendhdr_t *hdr,
   }
 
 // master side of enqueue.c: enqueue_client
+multsuf_t Msuf_tab[3] = 
+  {
+  {'G', 1024},
+  { 0, 0}
+  };
+
 void server_enqueue(server_thread_args_t *client)
   { // on a sync thread in the server space
   sendhdr_t hdr = client->hdr;
@@ -596,8 +621,8 @@ void server_enqueue(server_thread_args_t *client)
   
   // read and parse parms
   jl->nparms  = read_parse_parms(jl->dir,&(jl->parms));
-  jl->mem     = find_int_parm("mem",jl->nparms,jl->parms,1); //mb
-  jl->threads = find_int_parm("threads",jl->nparms,jl->parms,1); //single
+  jl->mem     = find_int_parm("mem",jl->nparms,jl->parms,1,Msuf_tab); //mb
+  jl->threads = find_int_parm("threads",jl->nparms,jl->parms,1,NULL); //single
 
   // try to schedule it
   int sch_immed = schedule_job(client->conf,jl);
