@@ -110,11 +110,14 @@ int job_match(jobinfo_t *ji,re_job_match_spec_t *rjm)
 void act_on_job_in_ul(uidlink_t *ul,
                       re_job_match_spec_t *rjm,
                       dlc_string **response,
-                      act_on_job_handler_t handler)
+                      act_on_job_handler_t handler,
+                      int reverse)
   {
   jobinfo_t ji;
     
-  for (ji.jl=ul->head; ji.jl ; ji.jl = ji.jl->un)
+  for (ji.jl = reverse ? ul->tail : ul->head;
+       ji.jl ;
+       ji.jl = reverse ? ji.jl->up : ji.jl->un)
     {
     ji.hdr = get_job_cmd(ji.jl->dir,&ji.pc);
     if (! ji.hdr) continue;  // partially written -- doesnt count
@@ -131,7 +134,8 @@ void act_on_job_in_ul(uidlink_t *ul,
 
 void act_on_job(uid_t uid,job_match_spec_t *jms,
                 dlc_string **response,
-                act_on_job_handler_t handler)
+                act_on_job_handler_t handler,
+                int reverse)
   {
   joblink_t *jl = 0;
   int priv = uid == 0;
@@ -156,12 +160,12 @@ void act_on_job(uid_t uid,job_match_spec_t *jms,
     { // root can look at all uid
     uidlink_t *ul = uidlist_head();
     for ( ; ul ; ul = ul->un ) //foreach user
-      act_on_job_in_ul(ul,&rjm,response,handler);
+      act_on_job_in_ul(ul,&rjm,response,handler,0);
     }
   else
     {
     uidlink_t *ul = find_uid(priv ? jms->uid : uid);
-    if (ul) act_on_job_in_ul(ul,&rjm,response,handler);
+    if (ul) act_on_job_in_ul(ul,&rjm,response,handler,0);
     }
   
   if (rjm.re)
@@ -212,7 +216,8 @@ void dequeue_a_job(dlc_string **resp,jobinfo_t *ji)
   }
 
 void recv_acton_reply(server_thread_args_t *client,
-                      act_on_job_handler_t action)
+                      act_on_job_handler_t action,
+                      int reverse)
   {
   dlc_string *response=0;
   sendhdr_t hdr = client->hdr;
@@ -222,7 +227,7 @@ void recv_acton_reply(server_thread_args_t *client,
   
   recvn(client->sock,buf,hdr.size,0);  // have args
 
-  act_on_job(hdr.uid,jms,&response,action);
+  act_on_job(hdr.uid,jms,&response,action,reverse);
   
   hdr.size = dlc_string_len(response);
   if (hdr.size>0) hdr.size ++;
@@ -236,7 +241,7 @@ void recv_acton_reply(server_thread_args_t *client,
 // enqueue.c: dequeue_client
 void server_dequeue(server_thread_args_t *client)
   {
-  recv_acton_reply(client,dequeue_a_job);
+  recv_acton_reply(client,dequeue_a_job,1);
   }
 
 void list_a_job(dlc_string **resp,jobinfo_t *ji)
@@ -257,7 +262,7 @@ void list_a_job(dlc_string **resp,jobinfo_t *ji)
 // enqueue.c: listqueue_client
 void server_list(server_thread_args_t *client)
   {
-  recv_acton_reply(client,list_a_job);
+  recv_acton_reply(client,list_a_job,0);
   }
 
 // list tokens request... returns string to client in

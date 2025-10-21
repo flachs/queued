@@ -12,6 +12,33 @@ const char *queuedd=".queued";
 const char *slash="/";
 const sendhdr_t hdr_zero;
 
+void rm_jobdir(uid_t uid, char *jname)
+  {
+  // find out ~
+  struct passwd pwent,*pwresult;
+  int bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
+  if (bufsize<0) bufsize = 16 K;
+  
+  char buf[bufsize];
+  getpwuid_r(uid,&pwent,buf,bufsize,&pwresult);
+
+  extern const char *rm_rf_command;
+  
+  char rm_cmd[strlen(rm_rf_command)+
+              strlen(pwent.pw_dir)+1+
+              strlen(queuedd)+1+
+              strlen(jname)];
+
+  char *arm=cpystring(rm_cmd,rm_rf_command);
+  char *fpqueuedd = cpystring(arm,pwent.pw_dir);
+  fpqueuedd = cpystring(fpqueuedd, slash);
+  fpqueuedd = cpystring(fpqueuedd, queuedd);
+  fpqueuedd = cpystring(fpqueuedd, slash);
+  fpqueuedd = cpystring(fpqueuedd, jname);
+  
+  //printf("rm_jobdir: %s\n",rm_cmd);
+  system(rm_cmd);
+  }
 
 static char *make_jobdir(conf_t *conf,char *lhostname,
                          uid_t uid,gid_t gid,
@@ -232,10 +259,23 @@ int enqueue_client(conf_t *conf,int argn,char **argv,char **env)
     recvn(sockfd,buffer,rdr.size,0);
     close(sockfd);
 
-    // check if server accepted
+    // check if server processed
     if (rdr.kind == DK_reply)
       {
-      printf("sch %d\n",rdr.value[0]);
+      int code = rdr.value[0];
+      if (code<0)
+        { // rejected?
+        int ec = -1 ^ code;
+        printf("rej by %d machines",ec>>8);
+        if (ec & 1) printf(" exceeded mem");
+        if (ec & 2) printf(" exceeded threads");
+        printf("\n");
+        rm_jobdir(uid, jname);
+        
+        return 0;
+        }
+      
+      printf("sch %d\n",code);
       return 0;
       }
 

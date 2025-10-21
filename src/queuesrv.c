@@ -176,6 +176,9 @@ sendhdr_t *get_job_cmd(char *dir,parsed_cmd_t *pc)
 
 /* when a job finishes, the job dir either gets deleted
    or gets a status file */
+
+const char *rm_rf_command="/bin/rm -rf ";
+
 void update_job_dir_when_done(joblink_t *jl,int status)
   {
   // it is done -- save status
@@ -199,9 +202,8 @@ void update_job_dir_when_done(joblink_t *jl,int status)
     }
   else
     {
-    static char *rm="/bin/rm -rf ";
-    char rmcmd[strlen(rm)+strlen(jl->dir)+1];
-    char *arm=cpystring(rmcmd,rm);
+    char rmcmd[strlen(rm_rf_command)+strlen(jl->dir)+1];
+    char *arm=cpystring(rmcmd,rm_rf_command);
     cpystring(arm,jl->dir);
     int tries=0;
     int srv=0;

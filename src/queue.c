@@ -158,19 +158,24 @@ int find_int_parm(const char *name,
                   int nparms, char **parml,
                   int def,multsuf_t *suftab)
   {
+  int debug=0;
+  
   for (int i=0;i<nparms;i++)
     if (! strcmp(name,parml[2*i]))
       {
       char *suf=0;
       int val = strtol(parml[2*i+1],&suf,0);
+      if (debug) fprintf(stderr,"fip %s: val %d\n",name,val);
+      
       if (suf)
         for (multsuf_t *s=suftab;s;s++) 
           {
           if (s->s==0) break;
           if (*suf==s->s)
             {
-            suf++;
             val*=s->m;
+            if (debug) fprintf(stderr,"  suf %c %d: val %d\n",suf,s->s,val);
+            suf++;
             }
           }
       return val;
@@ -398,6 +403,62 @@ int jl_fits_hl(conf_t *conf,
   return threads;
   }
 
+/* see if a job could be schedule on a host */
+typedef struct
+  {
+  joblink_t *jl;
+  int        flaws;
+  } jl_can_host_info_t;
+  
+int jl_can_host(conf_t *conf,const char *host,void *info)
+  {
+  int debug=0;
+  jl_can_host_info_t *ii = info;
+  joblink_t *jl = ii->jl;
+
+  ii->flaws += 0x100;
+  
+  limits_t lim;
+  statusinfomsg_t *si = get_host_status(host,0);
+  if (!si) return 0;                 // get_host_status failed...
+  if (si->info.cores==0) return 0;   // get_host_status failed...
+  
+  host_limits(&lim,conf,host,si);
+
+  //hostlink_t *hl = get_host_state(host);
+  
+  if (debug) fprintf(stderr,"jch: %p %s %s %d\n",
+                     jl,jl->dir,host,si->info.cores);
+
+  if (debug) fprintf(stderr,"   jch-mem(%s): %d %d",
+                     host,jl->mem,lim.memory);
+
+  // cant schedule if memory request is too big
+  if (jl->mem > lim.memory)
+    {
+    ii->flaws |= 1;
+    if (debug) fprintf(stderr,"   jch-big\n");
+    return 0;
+    }
+  
+  if (debug) fprintf(stderr,"   jch-thr(%s): %d %d",
+                     host,jl->threads,lim.threads);
+
+  // cant schedule if threads request is too big
+  if (jl->threads > lim.threads )
+    {
+    ii->flaws |= 2;
+    if (debug) fprintf(stderr,"   jch-bad\n");
+    return 0;
+    }
+  
+
+  if (debug) fprintf(stderr,"   jch-ok\n");
+  
+  return 1;
+  }
+
+
 typedef struct
   {
   joblink_t *jl;
@@ -522,7 +583,7 @@ int pick_job_host(conf_t *conf,const char *host,void *info)
   return pick_job_hl(conf,hl,si,hp);
   }
 
-/* have a job -- find a host for it */
+/* have a job -- find a host for it now */
 int schedule_job(conf_t *conf,joblink_t *jl)
   {
   hostpick_t hp;
@@ -615,15 +676,38 @@ void server_enqueue(server_thread_args_t *client)
   
   // message didnt beat nfs....
   free(chdr);
-  insert_into_list_sorted_newest_oldest(ul,jl);
-
-  // printf("enqueueing uid %d %d %d\n",hdr.uid,ul->uid,jl->u->uid);
   
   // read and parse parms
   jl->nparms  = read_parse_parms(jl->dir,&(jl->parms));
   jl->mem     = find_int_parm("mem",jl->nparms,jl->parms,1,Msuf_tab); //mb
   jl->threads = find_int_parm("threads",jl->nparms,jl->parms,1,NULL); //single
 
+  // reject if job is not schedulable
+  jl_can_host_info_t info;
+  info.flaws = 0;
+  info.jl    = jl;
+
+  int picked = for_each_host(client->conf,
+                             find_parm("group",jl->nparms,jl->parms,"all"),
+                             jl_can_host,
+                             &info);
+
+  if (!picked)
+    {  // send reject response to client
+    hdr.kind = DK_reply;
+    hdr.size = 0;
+    hdr.value[0] = -1 ^ info.flaws;
+  
+    send_response(sock,&hdr,NULL);
+    free_jl(jl);
+    return;
+    }
+
+  // enter it into the system
+  insert_into_list_sorted_newest_oldest(ul,jl);
+
+  // printf("enqueueing uid %d %d %d\n",hdr.uid,ul->uid,jl->u->uid);
+  
   // try to schedule it
   int sch_immed = schedule_job(client->conf,jl);
 
