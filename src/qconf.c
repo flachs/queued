@@ -10,6 +10,10 @@
 #include <stdarg.h>
 #include <string.h>
 
+#ifndef conf_debug
+#define conf_debug (0)
+#endif
+
 static char *delete_comments(char *p)
   {
   if (!p) return p;
@@ -99,15 +103,15 @@ void find_items(char *l[],char *p)
     }
   }
 
-void pushconf(conf_t **conf,int dims,int nl,...)
+void pushconf(confl_t **conf,int dims,int nl,...)
   {
   va_list ap;
   
   va_start(ap,nl);
-  conf_t **k = conf;
+  confl_t **k = conf;
   int i=0;
   char *s = va_arg(ap,char *);
-  conf_t *c,*n;
+  confl_t *c,*n;
   
 nextlev:
   c = *k;
@@ -124,6 +128,8 @@ nextlev:
   // not there -- add it
 addit:
   n = calloc(sizeof(conf_t),1);
+  if (conf_debug) fprintf(stderr,"caladd %p %s\n",n,s);
+  
   n->next = *k;
   n->name = s;
   *k=n;
@@ -147,6 +153,7 @@ nexte:
     }
   // not there add it
   n = calloc(sizeof(conf_t),1);
+  if (conf_debug) fprintf(stderr,"calnxe %p %s\n",n,list[ne]);
   n->next = *k;
   n->name = list[ne];
   ne++;
@@ -158,48 +165,114 @@ nexte:
   
   }
 
-char *readfile(char *filename)
+char *readfile(char *filename,char *buf,off_t size)
   {
   int fd = open(filename,O_RDONLY);
   if (fd<0) return NULL;
 
   // suck in file
-  struct stat statbuf;
-  fstat(fd,&statbuf);
-  off_t size = statbuf.st_size;
-  char *buf = malloc(size+1);
-  read(fd,buf,size);
+  if (!buf) buf = malloc(size);
+  
+  int n = read(fd,buf,size);
   close(fd);
-  buf[size]=0;
+  buf[n]=0;
 
   return buf;
   }
 
 conf_t *read_conf_file(char *filename)
   {
-  char *text = delete_comments(readfile(filename));
+  struct stat statbuf;
+  if (stat(filename,&statbuf)) return NULL;
+
+  // round up
+  int granule = 1<<12;
+  off_t size = (statbuf.st_size + 1 + granule) & ~( granule-1 );
+
+  char *text = delete_comments(readfile(filename,NULL,size));
+  
   if (!text) return NULL;
+  
+  conf_t *rv = malloc(sizeof(conf_t));
+  rv->name = filename;
+  rv->size = statbuf.st_size;
+  rv->mtim = statbuf.st_mtim.tv_sec;
+  
+  rv->file = text;
+  rv->head = 0;
   
   char *p = text;
   char *type,*lhs,*list;
-  conf_t *conf=0;
+  while (p = conf_parse_stmt(p,&type,&lhs,&list))
+    {
+    int n = count_items(list);
+    char *elements[n];
+    find_items(elements,list);
+    pushconf(&(rv->head),2,n,type,lhs,elements);
+    }
+  
+  return rv;
+  }
+
+void free_conf_index(confl_t *head)
+  {
+  if (!head) return ;
+  if (conf_debug) fprintf(stderr,"fci %p %s\n",head,head->name);
+
+  free_conf_index(head->head);
+  free_conf_index(head->next);
+  
+  if (conf_debug) fprintf(stderr,"free %p %s\n",head,head->name);
+  free(head);
+  }
+
+
+conf_t *reload_conf_file(conf_t *conf)
+  {
+  struct stat statbuf;
+  
+  if (conf_debug) fprintf(stderr,"rcf: %s\n",conf->name);
+  if (stat(conf->name,&statbuf)) return conf;
+
+  if (conf->mtim >= statbuf.st_mtim.tv_sec) return conf;
+  
+  free_conf_index(conf->head);
+  conf->head = 0;
+  
+  // round up
+  int granule = 1<<12;
+  off_t size = (statbuf.st_size + 1 + granule) & ~( granule-1 );
+
+  if (size > conf->size)
+    {
+    conf->file = realloc(conf->file,size);
+    conf->size = size;
+    }
+  
+  char *text = delete_comments(readfile(conf->name,conf->file,size));
+  if (!text) return NULL;
+
+  char *p = text;
+  char *type,*lhs,*list;
   while (p = conf_parse_stmt(p,&type,&lhs,&list))
     {
     int n = count_items(list);
     char *elements[n];
     find_items(elements,list);
     
-    pushconf(&conf,2,n,type,lhs,elements);
+    pushconf(&conf->head,2,n,type,lhs,elements);
     }
   
   return conf;
   }
 
-conf_t *conf_find(conf_t *c,...)
+confl_t *conf_find(conf_t *conf,...)
   {
   va_list ap;
   
-  va_start(ap,c);
+  va_start(ap,conf);
+
+  confl_t *c = conf->head;
   
   const char *s = va_arg(ap,char *);
   

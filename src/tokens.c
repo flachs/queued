@@ -60,7 +60,7 @@ void dlc_tokens(dlc_string **stream)
 
 void build_token_table(conf_t *conf)
   {
-  conf_t *token = conf_find(conf,"token",NULL);
+  confl_t *token = conf_find(conf,"token",NULL);
 
   mark_tokens(1);
   for ( ; token;token = token->next)

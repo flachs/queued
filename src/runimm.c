@@ -36,7 +36,7 @@ int run_immediate(conf_t *conf,char *prog,
   if (argn<1)
     print_help(options,prog,"[host=hostname|groupname] cmd args");
 
-  conf_t *group = conf_find(conf,"group",rhostname,NULL);
+  confl_t *group = conf_find(conf,"group",rhostname,NULL);
   if (group)
     {
     int rv=0;

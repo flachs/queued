@@ -296,7 +296,7 @@ typedef struct
 
 void host_limits(limits_t *l,conf_t *conf,const char *host,statusinfomsg_t *si)
   {
-  conf_t *limits = conf_find(conf,"limits",host,NULL);
+  confl_t *limits = conf_find(conf,"limits",host,NULL);
   l->memory = si->info.memory; // MB
   l->threads = si->info.threads;
   l->busy_start = -1;  // sec in day
@@ -452,7 +452,6 @@ int jl_can_host(conf_t *conf,const char *host,void *info)
     return 0;
     }
   
-
   if (debug) fprintf(stderr,"   jch-ok\n");
   
   return 1;

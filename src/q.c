@@ -58,7 +58,7 @@ void print_help(optdes *opt_des,char *name,char *msg)
           "\nstatus: -s [parm=value]\n"
           "    parms               description\n"
           "    show=jobs           show jobs running on each host\n"
-  );
+          "\nkill -SIGUSR1 causes a server to reload the conf file\n");
 
   exit(1);
   }
@@ -79,6 +79,16 @@ void printlog(char *fmt,...)
   va_end(ap);
 
   if (fp) fclose(fp);
+  }
+
+int reload_conf = 0;
+void server_usr1handler (int sig)
+  {
+  reload_conf = 1;
+  }
+
+void server_usr2handler (int sig)
+  {
   }
 
 void server_ctrlchandler (int sig)
@@ -298,7 +308,7 @@ void pthread_detached(void *(*start_routine) (void *), void *arg)
 
 void set_pid_dir_from_conf(conf_t *conf)
   {
-  conf_t *piddir       = conf_find(conf,"dir","pid",NULL);
+  confl_t *piddir       = conf_find(conf,"dir","pid",NULL);
   set_pid_dir(piddir->name);
   }
 
@@ -325,6 +335,8 @@ void server(conf_t *conf,int argn,char **argv)
   create_pid_file(hostn);
 
   install_sighandler(SIGINT,server_ctrlchandler);  
+  install_sighandler(SIGINT,server_usr1handler);  
+  install_sighandler(SIGINT,server_usr2handler);  
   
   //printlog("%s\n",__FUNCTION__);
   int server_sockfd = open_server_socket( getserviceport() );
@@ -333,6 +345,12 @@ void server(conf_t *conf,int argn,char **argv)
   
   while(1)
     {  // handle incoming connections
+    if (reload_conf)
+      {
+      reload_conf = 0;
+      reload_conf_file(conf);
+      }
+    
     server_thread_args_t client;
     memset(&client,0,sizeof(client));
 
@@ -407,7 +425,7 @@ int for_each_host(conf_t *conf,
                   const char *hostname,
                   feh_func_t *f,void *p)
   {
-  conf_t *group = conf_find(conf,"group",hostname,NULL);
+  confl_t *group = conf_find(conf,"group",hostname,NULL);
   if (group)
     { // process all hosts in group
     for (; group ; group = group->next)
@@ -468,12 +486,12 @@ int main(int argn,char **argv,char **env)
     exit(1);
     }
 
-  conf_t *group_master = conf_find(conf,"group","master",NULL);
+  confl_t *group_master = conf_find(conf,"group","master",NULL);
   
   if (group_master)
     dlc_option_set_default(options,"master",group_master->name);
     
-  conf_t *port_service = conf_find(conf,"port","service",NULL);
+  confl_t *port_service = conf_find(conf,"port","service",NULL);
   if (port_service)
     dlc_option_set_default(options,"p",port_service->name);
 
