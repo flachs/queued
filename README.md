@@ -43,8 +43,69 @@ parms:
   `threads=10` lets the scheduler know the job requires 10 threads to execute
 
 ### Job descriptions
-Job descriptions are stored in ~/.queued as directories unique to the job.  The command line and the parms as well as stdout and stderr are stored there.  This assumes that ~ is in a shared filesystem and is accessable to the submitting machine, the master machine and the execution machine with the same pathname.
+Job descriptions are stored in ~/.queued as directories using jobid is the directory name.
+The command line and the parms as well as stdout and stderr are stored there.  
+This requires that ~ is in a shared filesystem and is accessable to the submitting machine, the master machine and the execution machine with the same pathname.
+
+### Listing the Queue
+The current list of jobs that are not yet complete can be queried. 
+Generally, a user is limited to viewing the list of thier own jobs and is not given access to the jobs of other users.
+
+```
+% q -l
+username jobhost 2025/10/29@12:04:50 0 jobid command line given to q -e
+```
+
+Listing of the users jobs (one line per job) in submission order, either currently running or waiting to run.
+
+#### Job List Fields
+  `username` is the unix username of submitter.
+  `jobhost` is the hostname of host running the job or `-` if job is waiting to run.
+  `date@time` is the date and time the job was submitted.
+  `0` is the job group the user used to submit the job.
+  `jobid` is the jobs jobid.
+  `command` is the command line submitted.
+  
+### NOW Status
+The status of the machines in the NOW can be queried.
+
+```
+% q -s show=jobs hostgroup
+jobhost: 24/16cores 4224mips lavg: 300 276 198 xproc 64/1/99 q 6/2/6 2 mem 125gb used 87 avail 45 x 59gb q 33gb users 1 6sec up 5w,2d,45:12 0s-drift
+ - username jobid 3 1 3 4 command line given to q -q
+```
+A report with one section per host is produced. The first line of a host section is host status. 
+If show=jobs is requested, one line per job running on the host is follows the host status.
+
+#### Host Status Fields
+
+  `jobhost` is the hostname of the host.
+  `24/16` is the total number of threads and cores available in the host.
+  `mips` is the linux kernel bogo mips rating.
+  `lavg` are the three columns of load average *100.
+  `xproc` are the number of processes, running processes and threads running on the machine external to the queue.
+  `q` are the number of processes, running processes, threads and jobs running on the machine from the queue.
+  `mem` are the total memory, used memory and the available memory in GB.
+  `x` is the virtual memory used by processes external to the queue.
+  `q` is the virtual memory used by jobs running from the queue.
+  `users` is the number of users logged in to the host and the number of seconds since a command has been typed.
+  `up` is the uptime since boot, the current time and the seconds of drift.
+
+#### Job Status Fields
+
+  `-` this is a job status line.
+  `username` user who submitted the job.
+  `jobid` is the jobid for the job.
+  `3 1 3 4` are the number of processes, number of running processes and number of threads running and the virtual size of the job
+  
+  `command` the command line submitted to the queue
+
+### Removing Jobs from the Queue
+Jobs can be removed from the queue, before or while running.  If the job is running it will be terminated,
+
+```
+% q -d jobid
+dequeue of jobid suceeded
+```
 
 
-
- 
