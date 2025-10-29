@@ -23,7 +23,7 @@ q: q.c dlc_option.h q.h $(OFILES) trio/libtrio.a
 trio/libtrio.a : dlc_string.o dlc_string.h
 	cd trio ; make
 
-tokens.o : tokens.c q.h
+tokens.o : tokens.c qconf.h q.h
 
 qservrst.o: qservrst.c q.h
 
@@ -47,7 +47,7 @@ qdequeue.o : qdequeue.c q.h list.h
 
 queuesrv.o : queuesrv.c q.h
 
-runimm.o : runimm.c q.h
+runimm.o : runimm.c qconf.c q.h
 
 dlc_string.o : dlc_string.c dlc_string.h
 
