@@ -1,4 +1,7 @@
 
+ * provide multiple levels of priority so that a user
+   can slip higher priority jobs in front of thier
+   lower priority jobs.  Maybe priority=0 through 7.
  * fix terminate to only work if root orders it
  * factor active users into queue.c:jl_fits_hl()
  * factor available memory into queue.c:jl_fits_hl()

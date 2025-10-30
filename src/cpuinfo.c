@@ -25,6 +25,12 @@ userinfo_t readuserinfo()
 computerinfo_t readcpuinfo()
   {
   static computerinfo_t info;
+  int cores[8];
+  int threads[8];
+  int bogomips[8];
+  int phya=0;
+  int phym=0;
+  int phy=-1;
 
   if (info.cores) return info;
   
@@ -35,27 +41,43 @@ computerinfo_t readcpuinfo()
   while (1)
     {
     if (! fgets(buf,sizeof(buf)-1,fp)) break;
-    if (isspace(buf[0])) break;
-    
     
     char *colon = strchr(buf,':');
+    if (!colon) continue;
+    
     char *efn = strbackspc(colon-1);
-    if (fnmatch("cpu cores",buf,efn))
-      {
-      info.cores = atoi(colon+1);
+    if (fnmatch("physical id",buf,efn))
+      { // this comes first
+      phy = atoi(colon+1);
+      phym = 1<<phy;
+      if ( phym & phya ) phym = 0;
+      else phya |= phym;
       }
-    else if (fnmatch("siblings",buf,efn))
+    else if (phym && fnmatch("cpu cores",buf,efn))
       {
-      info.threads = atoi(colon+1);
+      cores[phy] = atoi(colon+1);
       }
-    else if (fnmatch("bogomips",buf,efn))
+    else if (phym && fnmatch("siblings",buf,efn))
       {
-      info.bogomips = atoi(colon+1);
+      threads[phy] = atoi(colon+1);
+      }
+    else if (phym && fnmatch("bogomips",buf,efn))
+      {
+      bogomips[phy] = atoi(colon+1);
       }
     }
   
   fclose(fp);
 
+  for (phy=0;phy<8;phy++)
+    {
+    if (phya & (1<<phy)) continue;
+    info.threads  += threads[phy];
+    info.cores    += cores[phy];
+    info.bogomips += cores[phy] * bogomips[phy];
+    }
+  info.bogomips /= info.cores;
+  
   fp = fopen("/proc/meminfo","r");
   if (! fp) exit(1);
 

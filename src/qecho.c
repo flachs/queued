@@ -198,7 +198,7 @@ int print_status(conf_t *conf,const char *hostname,void *showjobs)
   for (int i=1;i<si->nrs;i++)
     {
     uidlink_t *ul = find_or_make_uid(r[i].uid);
-    fprintf(stdout," - %s %s %d %d %ld",
+    fprintf(stdout," - %s %s %d %d %d %ld",
            ul->name, strrchr(r[i].jd,'/')+1,
            r[i].proc,r[i].running,r[i].threads,r[i].vsize>>30);
     if (myuid==0 || r[i].uid == myuid)
