@@ -4,6 +4,8 @@ A really simple job queue utility for linux written in C.
 The goal is to process jobs on a network of workstations **(NOW)** sharing a filesystem.
 Jobs are run either imediately returning stdout and stderr to the user or queued for execution when sufficient resources are available.
 
+# Usage Information
+
 ## Immediate Execution
 The runnow mode is a `rsh` splat utility function that is useful for maintaining a NOW.  The command is run sequentially on all specified hosts using an context very similar to the user's currently active environment and current working directory.
 For example,
@@ -42,6 +44,11 @@ parms:
   `mem=10G` lets the scheduler know the job requires 10GB of memory to execute
   `threads=10` lets the scheduler know the job requires 10 threads to execute
 
+output:
+  `jobid` returns the created jobid
+  `sch`   returns 1 if the job ran immediately or 0 if it is enqueued
+  'rej'   returns the reason the job was rejected
+
 ### Job descriptions
 Job descriptions are stored in ~/.queued as directories using jobid is the directory name.
 The command line and the parms as well as stdout and stderr are stored there.  
@@ -49,7 +56,7 @@ This requires that ~ is in a shared filesystem and is accessable to the submitti
 
 ### Listing the Queue
 The current list of jobs that are not yet complete can be queried. 
-Generally, a user is limited to viewing the list of thier own jobs and is not given access to the jobs of other users.
+Generally, a users other than root are limited to viewing the list of thier own jobs and are not shown jobs queued by other users.
 
 ```
 % q -l
@@ -85,8 +92,9 @@ If show=jobs is requested, one line per job running on the host is follows the h
   `lavg` are the three columns of load average *100.
   `xproc` are the number of processes, running processes and threads running on the machine external to the queue.
   `q` are the number of processes, running processes, threads and jobs running on the machine from the queue.
-  `mem` are the total memory, used memory and the available memory in GB.
-  `x` is the virtual memory used by processes external to the queue.
+  `mem` are the total memory, used memory, available memory and the memory used for buffers and cache in GB.
+  `xv` is the virtual memory used by processes external to the queue.
+  `xr` is the resident size of processes external to the queue.
   `q` is the virtual memory used by jobs running from the queue.
   `users` is the number of users logged in to the host and the number of seconds since a command has been typed.
   `up` is the uptime since boot, the current time and the seconds of drift.
@@ -106,6 +114,73 @@ Jobs can be removed from the queue, before or while running.  If the job is runn
 ```
 % q -d jobid
 dequeue of jobid suceeded
+```
+
+# Building Queued
+The q binary is a set-uid root process and is used both for the user client interface and for the server daemons.
+The `makefile` includes the install target that copies and ug+s.
+You will need to configure the INSTALL_DIR for your system.  
+```
+% cd src
+% make
+% sudo make install
+```
+
+Some systems running systemd might benefit from the queued.service example in the source directory.
+
+# Configuration
+When q starts, it reads the configuration file `/etc/queued.conf`. 
+The source directory contains an example file.
+
+## Pid Directory
+There must be a directory in a shared filesystem to store the pid files created by the sever daemons.
+The pid files will be created when the daemon starts and contain the server key.
+The files are owned by root read/writeable only by root.  
+The client needs the key inorder to send tcp messages to the daemon. 
+Daemons also need the keys for inter-server communications.
+
+```
+dir pid = /user/utility/packages/queued/pids;
+```
+Specifies the path to the directory where the pid files will be created.
+It should be created owned by root:root with mode 755.
+
+## Machine groups
+Machine groups are used to restrict the job execution to particular machines.
+The `master` group is manditory and specifies which machine will be the master scheduler.
+There can be only one machine in the master group.
+
+```
+group master = mist;
+```
+
+The group `all` is also manditory and is used as the default for all operations.
+```
+group all = mist smoke asst luke;
+```
+The all group does not need to have all of the machines.  For example, I dont have
+the laptops because they arent always connected to the NOW.
+
+You can create any other groupings that make sense.
+```
+group name = list of machines
+```
+
+## Machine limits
+You can limit the available resources for each machine.  
+Jobs wont schedule if they dont fit the available resources.
+
+```
+limits machine = mem=16G buf=20g threads=8 busy=8:00-19:00;
+```
+
+## Tokens
+You can create token pools to manage resources such as licenses.
+Jobs must be able to claim the specified tokens before they can be schedule, 
+and they hold thier tokens until they exit.
+
+```
+token LIC = 2;
 ```
 
 
