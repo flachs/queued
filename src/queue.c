@@ -185,22 +185,28 @@ int find_int_parm(const char *name,
   }
 
 // return contents of status query via server_status
-statusinfomsg_t *get_myhost_status(int mypid)
+statusinfomsg_t *get_myhost_status(int mypid,statusinfomsg_t **psi)
   {
-  static statusinfomsg_t *si;
-  static int nrs=-1;
+
+  /* if caller doesn have a place to store it
+     provide a static location */
+  static statusinfomsg_t *sis;  
+  if (!psi) psi = &sis;
 
   queuestatus_t *ques = readqueuestatus(mypid);
 
-  if (ques->n > nrs)
+  if (*psi==NULL || ques->n > (*psi)->srs)
     {
-    nrs = ques->n+16;
+    int nrs = ques->n+16;
     size_t newsize = ( sizeof(statusinfomsg_t)+
                        nrs*sizeof(running_stats_t));
     
-    si = realloc(si, newsize);
-    memset(si,0,newsize);
+    *psi = realloc(*psi, newsize);
+    memset(*psi,0,newsize);
+    (*psi)->srs = nrs;
     }
+
+  statusinfomsg_t *si = *psi;
 
   si->nrs = ques->n;
   memcpy(si->runs,ques->s,sizeof(running_stats_t)*si->nrs);
@@ -215,13 +221,19 @@ statusinfomsg_t *get_myhost_status(int mypid)
 /* send getstatus query to a host and recieve a reply,
    unless the query is for the local host, in which case
    just run get_myhost_status */
-statusinfomsg_t *get_host_status(const char *host,int client)
+statusinfomsg_t *get_host_status(const char *host,int client,
+                                 statusinfomsg_t **psi)
   {
   if (!client && !strcmp(host,hostname()))
     {
     int srvpid = 0;
-    return get_myhost_status(srvpid);
+    return get_myhost_status(srvpid,psi);
     }
+
+  /* if caller doesn have a place to store it
+     provide a static location */
+  static statusinfomsg_t *sis=0;
+  if (!psi) psi = &sis;  
   
   sendhdr_t hdr;
   if (get_magic_for_host(host,&hdr.magic)) return NULL;
@@ -239,20 +251,29 @@ statusinfomsg_t *get_host_status(const char *host,int client)
   send(sockfd,&hdr,sizeof(hdr),0);
   recvn(sockfd,&hdr,sizeof(hdr),0);
 
-  static int sisize=0;
-  static statusinfomsg_t *si=0;
-
-  if (hdr.size>sisize)
+  if (*psi==NULL || hdr.size> (*psi)->srs)
     {
-    si = realloc(si,hdr.size);
-    sisize = hdr.size;
+    *psi = realloc(*psi,hdr.size);
+    (*psi)->srs = hdr.size;
     }
-  
+
+  statusinfomsg_t *si = *psi;
+  int srs = si->srs;
   recvn(sockfd,si,hdr.size,0);
   
   close(sockfd);  
 
+  si->srs = srs;
+  
   return si;
+  }
+
+statusinfomsg_t *get_hl_status(hostlink_t *hl,int client,time_t recent)
+  {
+  time_t now = time(NULL);
+  if (hl->si && recent && now < hl->sift + recent) return hl->si;
+  
+  return get_host_status(hl->host,client,&(hl->si));
   }
 
 /* a job has been scheduled, send it to a host to be run */
@@ -291,13 +312,14 @@ int send_kill(const char *host,joblink_t *jl)
 /* override host metrics from conf */
 typedef struct
   {
-  int memory,threads,busy_start,busy_end;
+  int memory,buf,threads,busy_start,busy_end;
   } limits_t;
 
 void host_limits(limits_t *l,conf_t *conf,const char *host,statusinfomsg_t *si)
   {
   confl_t *limits = conf_find(conf,"limits",host,NULL);
   l->memory = si->info.memory; // MB
+  l->buf    = si->stat.membufrc; // MB
   l->threads = si->info.threads;
   l->busy_start = -1;  // sec in day
   l->busy_end   = -1;
@@ -309,6 +331,12 @@ void host_limits(limits_t *l,conf_t *conf,const char *host,statusinfomsg_t *si)
       int mem = strtol(limits->name+4,&suf,0);
       if (suf && *suf=='G') mem*=1024;
       if (mem<l->memory) l->memory = mem;
+      }
+    if (!strncmp(limits->name,"buf=",4))
+      {
+      char *suf=0;
+      int buf = strtol(limits->name+4,&suf,0);
+      if (suf && *suf=='G') l->buf = buf*1024;
       }
     if (!strncmp(limits->name,"threads=",8))
       {
@@ -379,8 +407,14 @@ int jl_fits_hl(conf_t *conf,
   if (debug) fprintf(stderr,"   sjhl-mem(%s): %d %d %d\n",
                      hl->host,jl->mem,lim.memory,hl->used_memory);
 
+  // note: used+avail=total & free+buf=avail
+  
+  // mem req exceeds mem available for another job
   if (jl->mem > lim.memory - hl->used_memory) return 0;
-
+  
+  // mem req exceeds mem available for any new process
+  if (jl->mem > si->stat.memavail - lim.buf) return 0;
+      
   if (debug) fprintf(stderr,"   sjhl-thr(%s): %d %d %d\n",
                      hl->host,jl->threads,lim.threads,hl->used_threads);
 
@@ -407,19 +441,21 @@ int jl_fits_hl(conf_t *conf,
 typedef struct
   {
   joblink_t *jl;
-  int        flaws;
+  int        flaws; // boolean flags decoded by enqueue_client
   } jl_can_host_info_t;
   
 int jl_can_host(conf_t *conf,const char *host,void *info)
   {
   int debug=0;
+  
+  hostlink_t *hl = get_host_state(host);
   jl_can_host_info_t *ii = info;
   joblink_t *jl = ii->jl;
 
   ii->flaws += 0x100;
   
   limits_t lim;
-  statusinfomsg_t *si = get_host_status(host,0);
+  statusinfomsg_t *si = get_hl_status(hl,0,2);
   if (!si) return 0;                 // get_host_status failed...
   if (si->info.cores==0) return 0;   // get_host_status failed...
   
@@ -436,8 +472,15 @@ int jl_can_host(conf_t *conf,const char *host,void *info)
   // cant schedule if memory request is too big
   if (jl->mem > lim.memory)
     {
-    ii->flaws |= 1;
+    ii->flaws |= 2;
     if (debug) fprintf(stderr,"   jch-big\n");
+    return 0;
+    }
+
+  if (jl->mem > si->stat.memavail - lim.buf)
+    {
+    ii->flaws |= 4;
+    if (debug) fprintf(stderr,"   jch-sqz\n");
     return 0;
     }
   
@@ -447,8 +490,8 @@ int jl_can_host(conf_t *conf,const char *host,void *info)
   // cant schedule if threads request is too big
   if (jl->threads > lim.threads )
     {
-    ii->flaws |= 2;
-    if (debug) fprintf(stderr,"   jch-bad\n");
+    ii->flaws |= 8;
+    if (debug) fprintf(stderr,"   jch-thr\n");
     return 0;
     }
   
@@ -570,7 +613,7 @@ int pick_job_host(conf_t *conf,const char *host,void *info)
   hostpick_t *hp = info;
   
   joblink_t *jl = hp->jl;
-  statusinfomsg_t *si = get_host_status(host,0);
+  statusinfomsg_t *si = get_hl_status(hp->hl,0,2);
   
   if (!si) return 0;   // get_host_status failed...
   
@@ -686,12 +729,15 @@ void server_enqueue(server_thread_args_t *client)
   info.flaws = 0;
   info.jl    = jl;
 
+  int tok_ok=check_tokens_ever(jl);
+  if (!tok_ok) info.flaws |= 1;
+  
   int picked = for_each_host(client->conf,
                              find_parm("group",jl->nparms,jl->parms,"all"),
                              jl_can_host,
                              &info);
 
-  if (!picked)
+  if (!tok_ok || !picked)
     {  // send reject response to client
     hdr.kind = DK_reply;
     hdr.size = 0;
@@ -758,7 +804,7 @@ void schedule_host(conf_t *conf,hostlink_t *hl)
 
   if (n>1) qsort(uid,n,sizeof(*uid),user_sorter);
 
-  statusinfomsg_t *si = get_host_status(hl->host,0);
+  statusinfomsg_t *si = get_hl_status(hl,0,2);
   if (si->info.cores==0) return;
 
   // schedule and keep scheduling jobs on this host
@@ -823,7 +869,7 @@ int append_host_state(conf_t *conf,const char *host,void *info)
   {
   dlc_string **r = (dlc_string **)info;
   hostlink_t *hl = get_host_state(host);
-  statusinfomsg_t *si = get_host_status(host,0);
+  statusinfomsg_t *si = get_hl_status(hl,0,2);
   
   dlc_string_caf(r,"%s %d %d %d %d\n",host,
                  hl->jobs_running,si->stat.la1,

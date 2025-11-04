@@ -58,19 +58,19 @@ int read_proc_stat(int pid, proc_pid_stat_t *restrict P)
   int fields = 
   sscanf(bp,
          "%c "
-         "%d %d %d %d %d "
-         "%lu "
-         "%lu %lu %lu %lu "
+         "%d %d %d %d %d "  //ppid pgrp session tty tpgid
+         "%lu "             //flags
+         "%lu %lu %lu %lu " //min_flt cmin_flt maj_flt cmaj_flt
          "%llu %llu %llu %llu "  /* utime stime cutime cstime */
-         "%ld %ld "
-         "%d "
-         "%ld "
+         "%ld %ld "         //priority nice
+         "%d "              //nlwp
+         "%lld "            //alarm
          "%llu "  /* start_time */
-         "%lu "   // vsize
+         "%lu "  // vsize
          "%ld "   // rss
          "%lu "   // rss_rlim
-         "%"KLF"u %"KLF"u "  // start_code, end_code
-         "%"KLF"u %"KLF"u %"KLF"u "
+         "%"KLF"u %"KLF"u "         // start_code, end_code
+         "%"KLF"u %"KLF"u %"KLF"u " // start_stak, kstk_esp, kstk_eip
          /* discard, no RT signals & Linux 2.1 used hex */
          "%*s %*s %*s %*s " 
          "%"KLF"u "  //wchan

@@ -42,8 +42,9 @@ typedef struct
 // information about a job running under q system
 typedef struct
   {
-  uint64_t tag,   // jl pointer on master for a job
-           vsize; // virtual memory size
+  uint64_t tag;   // jl pointer on master for a job
+  uint32_t vsize; // virtual memory size (kB)
+  uint32_t rsize; // resident memory size (kB)
   int proc,       // number of processes
       running,    // number of running processes
       threads,    // number of threads
@@ -75,14 +76,16 @@ typedef struct
   time_t uptime,     // seconds computer has been running
          time;       // time on that computer
   int la1,la5,la15;  // load averages 1, 5 and 15 minute
-  int memswap,       // size of swap space in kb
-      memused,       // memory used by programs in kb
-      memavail;      // memory still available in kb
+  int memswap,       // size of swap space in Mb
+      memused,       // memory used by programs in Mb
+      memavail,      // memory still available in Mb
+      membufrc;      // memory usec by disk cache/buffers/kernel reclaimable.
   } computerstatus_t;
 
 // roll up of computer status
 typedef struct
   {
+  int srs;                 // number of runs allocated for
   int nrs;                 // number of running jobs on a computer
   computerinfo_t info;
   userinfo_t user;
@@ -216,6 +219,8 @@ typedef struct hostlink_s
   struct hostlink_s *hn,*hp;      // host next and previous
   struct joblink_s  *head,*tail;  // list of jobs on host
   struct hostlist_s *h;           // pointer head of host list
+  time_t sift;                    // when si was last filled
+  statusinfomsg_t *si;
   unsigned int used_threads,      // how many threads are allocated
                used_memory,       // how much memory is allocated
                jobs_running;      // how many jobs are running
@@ -324,6 +329,7 @@ static inline uint64_t get_tag_ui32x2_ui64(uint32_t *d)
 void print_tokens(FILE *stream);
 void build_token_table(conf_t *conf);
 int  check_tokens(joblink_t *jl);
+int  check_tokens_ever(joblink_t *jl);
 void claim_tokens(joblink_t *jl);
 void release_tokens(joblink_t *jl);
 
@@ -410,8 +416,11 @@ const char *find_parm(const char *name,
 int read_parse_parms(const char *dir,char ***parmsp);
 joblink_t *make_jl();
 void server_jobdone(server_thread_args_t *client);
-statusinfomsg_t *get_myhost_status(int mypid);
-statusinfomsg_t *get_host_status(const char *host,int client);
+statusinfomsg_t *get_myhost_status(int mypid,statusinfomsg_t **psi);
+statusinfomsg_t *get_host_status(const char *host,int client,
+                                 statusinfomsg_t **psi);
+statusinfomsg_t *get_hl_status(hostlink_t *hl,int client,
+                               time_t recent);
 int send_kill(const char *host,joblink_t *jl);
 void server_enqueue(server_thread_args_t *client);
 void server_dequeue(server_thread_args_t *client);

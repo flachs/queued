@@ -267,8 +267,10 @@ int enqueue_client(conf_t *conf,int argn,char **argv,char **env)
         { // rejected?
         int ec = -1 ^ code;
         printf("rej by %d machines",ec>>8);
-        if (ec & 1) printf(" exceeded mem");
-        if (ec & 2) printf(" exceeded threads");
+        if (ec & 1) printf(" exceeded tokens");
+        if (ec & 2) printf(" exceeded mem");
+        if (ec & 4) printf(" exceeded available-buf mem");
+        if (ec & 8) printf(" exceeded threads");
         printf("\n");
         rm_jobdir(uid, jname);
         

@@ -108,7 +108,7 @@ void server_status(server_thread_args_t *client)
   hdr.kind = DK_status;
 
   int mypid = getpid();
-  statusinfomsg_t *si = get_myhost_status(mypid);
+  statusinfomsg_t *si = get_myhost_status(mypid,NULL);
   hdr.size = sizeof(statusinfomsg_t) +
                     si->nrs * sizeof(running_stats_t);
 
@@ -152,7 +152,7 @@ char *formatdrift(char *p,time_t here,time_t there)
 
 int print_status(conf_t *conf,const char *hostname,void *showjobs)
   {
-  statusinfomsg_t *si = get_host_status(hostname,1);
+  statusinfomsg_t *si = get_host_status(hostname,1,NULL);
   if (! si)
     {
     printf("%s: broken\n",hostname);
@@ -179,12 +179,14 @@ int print_status(conf_t *conf,const char *hostname,void *showjobs)
          r[0].proc,r[0].running,r[0].threads,
          qproc,qrun,qthreads,
          si->nrs-1);
-  printf("mem %dgb used %d avail %d x %lldgb q %lldgb ",
-         (si->info.memory+512)/1024,
-         (si->stat.memused+512)/1024,
-         (si->stat.memavail+512)/1024,
-         r[0].vsize>>30,
-         qvsize>>30);
+  printf("mem %dgb used %d avail %d buf %d xv %lldgb xr %lldgb q %lldgb ",
+         (si->info.memory+512)>>10,
+         (si->stat.memused+512)>>10,
+         (si->stat.memavail+512)>>10,
+         (si->stat.membufrc+512)>>10,
+         (r[0].vsize+512)>>10,
+         (r[0].rsize+512)>>10,
+         (qvsize+512)>>10);
 
   char buf[80];
   formatdrift(formatuptime(buf,si->stat.uptime),

@@ -71,7 +71,7 @@ computerinfo_t readcpuinfo()
 
   for (phy=0;phy<8;phy++)
     {
-    if (phya & (1<<phy)) continue;
+    if (!(phya & (1<<phy))) continue;
     info.threads  += threads[phy];
     info.cores    += cores[phy];
     info.bogomips += cores[phy] * bogomips[phy];
@@ -154,7 +154,7 @@ computerstatus_t readcpustatus()
     if (fnmatch("MemFree",buf,efn))        freem += atoi(colon+1)/(1 K);
     if (fnmatch("SwapFree",buf,efn))       freem += atoi(colon+1)/(1 K);
     if (fnmatch("Cached",buf,efn))         cachd += atoi(colon+1)/(1 K);
-    if (fnmatch("SReclaimable",buf,efn))   cachd += atoi(colon+1)/(1 K);
+    if (fnmatch("KReclaimable",buf,efn))   cachd += atoi(colon+1)/(1 K);
     if (fnmatch("Buffers",buf,efn))        bufrs += atoi(colon+1)/(1 K);
     if (fnmatch("MemAvailable",buf,efn))   avail += atoi(colon+1)/(1 K);
     }
@@ -163,7 +163,7 @@ computerstatus_t readcpustatus()
   info.memswap = swap;
   info.memused = total - freem - bufrs - cachd;
   info.memavail = avail;
-  
+  info.membufrc = bufrs + cachd;
   fclose(fp);  
 
   return info;

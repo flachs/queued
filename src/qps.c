@@ -16,7 +16,7 @@ typedef struct proctabe_s
   int next,chhead;
   unsigned int uid,pid,ppid,tty,threads;
   unsigned char state;
-  uint64_t tag,vsize;
+  uint64_t tag,vsize,rsize;
   char *top;
   char com[MAX_COMLEN];
   } proctabe_t;
@@ -71,7 +71,8 @@ int recieve_proc_entry(void *arg,pid_t pid,proc_pid_stat_t *procp)
   
   p->ppid = procp->ppid;
   p->state = procp->state;
-  p->vsize = procp->vsize;
+  p->vsize = procp->vsize>>20; // Mbytes
+  p->rsize = procp->rss>>8;    // Mbytes
   p->threads = procp->nlwp;
   p->tty = procp->tty;
   p->top = 0;
@@ -251,8 +252,8 @@ running_stats_t *find_tag_slot(running_stats_t *s,int n,uint64_t tag)
   return s;
   }
 
-/* return lots of queue status info -- used by
-   get_myhost_status */
+/* return lots of queue status info
+   -- used by get_myhost_status */
 queuestatus_t *readqueuestatus(int mypid)
   {
   static int nrs = 0;
@@ -297,20 +298,25 @@ queuestatus_t *readqueuestatus(int mypid)
     if (pt->pid == mypid) continue;
 
     running_stats_t *s = find_tag_slot(info->s,nslots,pt->tag);
-    
-    if (s==info->s && pt->tty==0) continue;
+
+    int ttymaj = pt->tty;
+    int ttymin = (ttymaj & 0xff) | (((ttymaj>>20) & 0xfff)<<8);
+    ttymaj = (ttymaj>>8) && 0xff;
+
+    //if (s==info->s && pt->tty==0) continue;
     
     if (0 && nslots>1)
-      printf("%d %d %c %d %lld %d %-20s\n",
-             s-info->s,pt->tty,
-             pt->state,pt->pid,
-             pt->vsize,pt->threads,
-             pt->com);
+      printf("%d: %d %c %d %lld %d %-20s\n",
+              s-info->s,pt->tty,
+              pt->state,pt->pid,
+              pt->vsize,pt->threads,
+              pt->com);
 
     s->proc    ++;
     s->running += pt->state == 'R';
     s->threads += pt->threads;
     s->vsize   += pt->vsize;
+    s->rsize   += pt->rsize;
     }
   
   return info;

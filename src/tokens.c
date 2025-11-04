@@ -98,6 +98,23 @@ int check_tokens(joblink_t *jl)
   return 1;
   }
 
+int check_tokens_ever(joblink_t *jl)
+  {
+  int nparms = jl->nparms;
+  char **parml = jl->parms;
+  
+  for (int i=0;i<nparms;i++)
+    {
+    token_t *t=find_token(parml[2*i]);
+    if (t)
+      {
+      int req = atoi(parml[2*i+1]);
+      if (req > (t->pool)) return 0;
+      }
+    }
+  return 1;
+  }
+
 void claim_tokens(joblink_t *jl)
   {
   int nparms = jl->nparms;

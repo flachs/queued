@@ -4,7 +4,6 @@
    lower priority jobs.  Maybe priority=0 through 7.
  * fix terminate to only work if root orders it
  * factor active users into queue.c:jl_fits_hl()
- * factor available memory into queue.c:jl_fits_hl()
  * implement load master/server from running state/dirs
  * Check point and restore / migration from host to host
      maybe use proj/netsrc/criu
@@ -13,6 +12,7 @@
 Done
 ====
 
+ * factor available memory into queue.c:jl_fits_hl()
  * pid cache now stats for mtime, reloads if not 
    current.  can kill/end/restart server and pid cache
    will allow reestablish of communication.

@@ -212,20 +212,20 @@ typedef struct proc_pid_stat_s
   unsigned long long stime; // kernel-mode CPU time accumulated by process
   unsigned long long cutime;// cumulative utime of process and reaped children
   unsigned long long cstime;// cumulative stime of process and reaped children
-  int priority; // kernel scheduling priority
-  int nice;     // standard unix nice level of process
+  long int priority; // kernel scheduling priority
+  long int nice;     // standard unix nice level of process
   int nlwp;     // number of threads, or 0 if no clue
-  long alarm;
+  long long alarm;
   unsigned long long start_time; // start time of process -- seconds since system boot
-  unsigned long long vsize;      // number of pages of virtual memory ...
-  long rss;            // identical to 'resident'
+  unsigned long vsize;      // number of pages of virtual memory ...
+  long rss;                 // identical to 'resident'
   unsigned long rss_rlim;       // resident set size limit?
   unsigned KLONG start_code;    // address of beginning of code segment
-  unsigned long end_code;       // address of end of code segment
-  unsigned long start_stack;    // address of the bottom of stack for the process
-  unsigned long kstk_esp;       // kernel stack pointer
-  unsigned long kstk_eip;       // kernel instruction pointer
-  unsigned long wchan;          // address of kernel wait channel proc is sleeping in
+  unsigned KLONG end_code;      // address of end of code segment
+  unsigned KLONG start_stack;   // address of the bottom of stack for the process
+  unsigned KLONG kstk_esp;      // kernel stack pointer
+  unsigned KLONG kstk_eip;      // kernel instruction pointer
+  unsigned KLONG wchan;         // address of kernel wait channel proc is sleeping in
   int exit_signal;    // might not be SIGCHLD
   int processor;      // current (or most recent?) CPU
   unsigned long rtprio; // real-time priority
