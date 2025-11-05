@@ -612,16 +612,16 @@ int pick_job_host(conf_t *conf,const char *host,void *info)
   {
   hostpick_t *hp = info;
   
-  joblink_t *jl = hp->jl;
-  statusinfomsg_t *si = get_hl_status(hp->hl,0,2);
+  hostlink_t *hl = get_host_state(host);
+  statusinfomsg_t *si = get_hl_status(hl,0,2);
   
   if (!si) return 0;   // get_host_status failed...
   
+  joblink_t *jl = hp->jl;
   if (0) fprintf(stderr,"sjh: %s %s %d\n",jl->dir,host,si->info.cores);
 
   if (si->info.cores==0) return 0;   // get_host_status failed...
   
-  hostlink_t *hl = get_host_state(host);
   return pick_job_hl(conf,hl,si,hp);
   }
 
