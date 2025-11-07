@@ -52,21 +52,21 @@ sch 1
 
 option:
 
-  `-e` specified enqueue the job rather than run it now
+  * `-e` specified enqueue the job rather than run it now
   
 parms:
 
-  `jg=0`  integer job group, for matching in list and dequeue.
-  `pri=4` scheduling piority with 0 being first and 7 last.
-  `group` specifies a host or group of hosts capable of running the job
-  `keep=error` directs the system to leave the job description in place after an error (return code != 0) Could use `always` instead.
-  `mem=10G` lets the scheduler know the job requires 10GB of memory to execute
-  `threads=10` lets the scheduler know the job requires 10 threads to execute
+  * `jg=0`  integer job group, for matching in list and dequeue.
+  * `pri=4` scheduling piority with 0 being first and 7 last.
+  * `group` specifies a host or group of hosts capable of running the job
+  * `keep=error` directs the system to leave the job description in place after an error (return code != 0) Could use `always` instead.
+  * `mem=10G` lets the scheduler know the job requires 10GB of memory to execute
+  * `threads=10` lets the scheduler know the job requires 10 threads to execute
 
 output:
-  `jobid` returns the created jobid
-  `sch`   returns 1 if the job ran immediately or 0 if it is queued
-  'rej'   returns the reason the job was rejected
+  * `jobid` returns the created jobid
+  * `sch`   returns 1 if the job ran immediately or 0 if it is queued
+  * 'rej'   returns the reason the job was rejected
 
 ### Job descriptions
 Job descriptions are stored in ~/.queued as directories using jobid is the directory name.
@@ -85,12 +85,12 @@ username jobhost 2025/10/29@12:04:50 0 jobid command line given to q -e
 Listing of the users jobs (one line per job) in submission order, either currently running or waiting to run.
 
 #### Job List Fields
-  `username` is the unix username of submitter.
-  `jobhost` is the hostname of host running the job or `-` if job is waiting to run.
-  `date@time` is the date and time the job was submitted.
-  `0` is the job group the user used to submit the job.
-  `jobid` is the jobs jobid.
-  `command` is the command line submitted.
+  * `username` is the unix username of submitter.
+  * `jobhost` is the hostname of host running the job or `-` if job is waiting to run.
+  * `date@time` is the date and time the job was submitted.
+  * `0` is the job group the user used to submit the job.
+  * `jobid` is the jobs jobid.
+  * `command` is the command line submitted.
   
 ### NOW Status
 The status of the machines in the NOW can be queried.
@@ -105,27 +105,27 @@ If show=jobs is requested, one line per job running on the host is follows the h
 
 #### Host Status Fields
 
-  `jobhost` is the hostname of the host.
-  `24/16` is the total number of threads and cores available in the host.
-  `mips` is the linux kernel bogo mips rating.
-  `lavg` are the three columns of load average *100.
-  `xproc` are the number of processes, running processes and threads running on the machine external to the queue.
-  `q` are the number of processes, running processes, threads and jobs running on the machine from the queue.
-  `mem` are the total memory, used memory, available memory and the memory used for buffers and cache in GB.
-  `xv` is the virtual memory used by processes external to the queue.
-  `xr` is the resident size of processes external to the queue.
-  `q` is the virtual memory used by jobs running from the queue.
-  `users` is the number of users logged in to the host and the number of seconds since a command has been typed.
-  `up` is the uptime since boot, the current time and the seconds of drift.
+  * `jobhost` is the hostname of the host.
+  * `24/16` is the total number of threads and cores available in the host.
+  * `mips` is the linux kernel bogo mips rating.
+  * `lavg` are the three columns of load average *100.
+  * `xproc` are the number of processes, running processes and threads running on the machine external to the queue.
+  * `q` are the number of processes, running processes, threads and jobs running on the machine from the queue.
+  * `mem` are the total memory, used memory, available memory and the memory used for buffers and cache in GB.
+  * `xv` is the virtual memory used by processes external to the queue.
+  * `xr` is the resident size of processes external to the queue.
+  * `q` is the virtual memory used by jobs running from the queue.
+  * `users` is the number of users logged in to the host and the number of seconds since a command has been typed.
+  * `up` is the uptime since boot, the current time and the seconds of drift.
 
 #### Job Status Fields
 
-  `-` this is a job status line.
-  `username` user who submitted the job.
-  `jobid` is the jobid for the job.
-  `3 1 3 4` are the number of processes, number of running processes and number of threads running and the virtual size of the job
-  
-  `command` the command line submitted to the queue
+  * `-` this is a job status line.
+  * `username` user who submitted the job.
+  * `jobid` is the jobid for the job.
+  * `3 1 3 4` are the number of processes, number of running processes and number of threads running and the virtual size of the job
+  * 
+  * `command` the command line submitted to the queue
 
 ### Removing Jobs from the Queue
 Jobs can be removed from the queue, before or while running.  If the job is running it will be terminated,
