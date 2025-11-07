@@ -69,24 +69,48 @@ output:
   * 'rej'   returns the reason the job was rejected
 
 ### Job descriptions
-Job descriptions are stored in ~/.queued as directories using jobid is the directory name.
-The command line and the parms as well as stdout and stderr are stored there.  
-This requires that ~ is in a shared filesystem and is accessable to the submitting machine, the master machine and the execution machine with the same pathname.
+Job descriptions are stored in ~/.queued as directories using
+jobid is the directory name.
+The command line and the parms as well as stdout and stderr are
+stored there.  
+This requires that ~ is in a shared filesystem and is accessable
+to the submitting machine, the master machine and the execution
+machine with the same pathname.
 
 ### Listing the Queue
 The current list of jobs that are not yet complete can be queried. 
-Generally, a users other than root are limited to viewing the list of thier own jobs and are not shown jobs queued by other users.
+Generally, a users other than root are limited to viewing the list
+of thier own jobs and are not shown jobs queued by other users.
 
 ```
 % q -l
 username jobhost 2025/10/29@12:04:50 0 jobid command line given to q -e
 ```
 
-Listing of the users jobs (one line per job) in submission order, either currently running or waiting to run.
+Listing of the users jobs (one line per job) in submission order,
+either currently running or waiting to run.
+
+#### Job List Selection
+The job list function utilizes parms to control which jobs are
+included in the list.
+
+parms:
+
+  * `time=beg,end` selects jobs submitted between beg and end.
+    If end is omitted, then the range ends now.
+  * `cmd=regexp` selects jobs whose command lines match the
+    regular expression.
+  * `host=hostname` selects jobs that are running on a host.
+  * `jg=integer` selects jobs that belong to the job group.
+  * `pri=integer` selects jobs that were submitted with a priority.
+  * `a=all`       selects all jobs.
+  * `u=uname`     selects the jobs submitted by a user or '-' for all users.
+  * `jobid`       selects a job by its jobid.
 
 #### Job List Fields
   * `username` is the unix username of submitter.
-  * `jobhost` is the hostname of host running the job or `-` if job is waiting to run.
+  * `jobhost` is the hostname of host running the job
+              or `-` if job is waiting to run.
   * `date@time` is the date and time the job was submitted.
   * `0` is the job group the user used to submit the job.
   * `jobid` is the jobs jobid.
@@ -115,7 +139,7 @@ If show=jobs is requested, one line per job running on the host is follows the h
   * `xv` is the virtual memory used by processes external to the queue.
   * `xr` is the resident size of processes external to the queue.
   * `q` is the virtual memory used by jobs running from the queue.
-  * `users` is the number of users logged in to the host and the number of seconds since a command has been typed.
+  * `users` provides the number of users logged in to the host who have typed a command in the last 30 mins and the number of seconds since a command has been typed.
   * `up` is the uptime since boot, the current time and the seconds of drift.
 
 #### Job Status Fields
@@ -134,6 +158,9 @@ Jobs can be removed from the queue, before or while running.  If the job is runn
 % q -d jobid
 dequeue of jobid suceeded
 ```
+
+All of the selection logic available for `-l` are available also for `-d`.
+For complex job dequeuing, use `-l` to develop the critereon for `-d`.
 
 # Building Queued
 The q binary is a set-uid root process and is used both for the user client interface and for the server daemons.
