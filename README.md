@@ -26,7 +26,22 @@ parms:
   `host` specifies either a hostname or machine group to run the command on. The default is all.
 
 ## Queued Execution
-Submitting a job to the job queue creates a job description and sends that job description to the master queue server.  That server will send the job to an execution server running on a workstation capable of running the job.  After the job is run either the job description is deleted or update with job status. Often a job will be submitted with a foreach loop or a script.
+Submitting a job to the job queue creates a job description and sends that job description to the master queue server.
+The master will send the job to an execution server running on a workstation capable of running the job.
+The job will be sent for execution either immediately upon submission or at the earliest time that it is the highest priority job that could schedule.
+
+Priority order is:
+
+  1. the user running the least number of jobs,
+  2. the user that least recently had a job scheduled,
+  3. the pri parm (0 first .. 7 last), and
+  4. submisstion time with the oldest job first.
+  
+However, higher priority jobs that cannot schedule do not block lower priority jobs that can schedule.
+Users cannot use pri parm to advance their jobs before another user's jobs.
+
+After the job is run, either the job description is deleted or update with job status.
+Often a job will be submitted with a foreach loop or a script.
 For example to transcode a video,
 
 ```
@@ -36,9 +51,13 @@ sch 1
 ```
 
 option:
-  `-e` specified enqueue the job rather than run it now
 
+  `-e` specified enqueue the job rather than run it now
+  
 parms:
+
+  `jg=0`  integer job group, for matching in list and dequeue.
+  `pri=4` scheduling piority with 0 being first and 7 last.
   `group` specifies a host or group of hosts capable of running the job
   `keep=error` directs the system to leave the job description in place after an error (return code != 0) Could use `always` instead.
   `mem=10G` lets the scheduler know the job requires 10GB of memory to execute
@@ -46,7 +65,7 @@ parms:
 
 output:
   `jobid` returns the created jobid
-  `sch`   returns 1 if the job ran immediately or 0 if it is enqueued
+  `sch`   returns 1 if the job ran immediately or 0 if it is queued
   'rej'   returns the reason the job was rejected
 
 ### Job descriptions

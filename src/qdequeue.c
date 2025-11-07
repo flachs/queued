@@ -46,6 +46,11 @@ static inline int jobgrp_match(jobinfo_t *ji,re_job_match_spec_t *rjm)
   return ji->jl->jg == rjm->jms->jg;
   }
 
+static inline int jobpri_match(jobinfo_t *ji,re_job_match_spec_t *rjm)
+  {
+  return ji->jl->jg == rjm->jms->jg;
+  }
+
 
 int jobhost_match(jobinfo_t *ji,re_job_match_spec_t *rjm)
   {
@@ -102,6 +107,7 @@ int job_match(jobinfo_t *ji,re_job_match_spec_t *rjm)
   if ((spec & JMS_CMDSS ) && !jobcmd_match(ji,rjm))     return 0;
   if ((spec & JMS_CMDRE ) && !jobcmd_rematch(ji,rjm))   return 0;
   if ((spec & JMS_JG    ) && !jobgrp_match(ji,rjm))     return 0;
+  if ((spec & JMS_PRI   ) && !jobpri_match(ji,rjm))     return 0;
   if ((spec & JMS_HOST  ) && !jobhost_match(ji,rjm))    return 0;
 
   return 1;
@@ -249,11 +255,11 @@ void list_a_job(dlc_string **resp,jobinfo_t *ji)
   joblink_t *jl = ji->jl;
   char tb[200];
   
-  dlc_string_caf(resp,"%s %s %s %d %s %s\n",
+  dlc_string_caf(resp,"%s %s %s %d %d %s %s\n",
                  jl->u->name,
                  jl->h ? jl->h->host : "-",
                  format_time(tb,jl->ct.tv_sec),
-                 jl->jg,
+                 jl->jg,jl->pri,
                  iso_jobdir(jl->dir),
                  ji->pc.cmd);
   }

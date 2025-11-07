@@ -210,11 +210,25 @@ int enqueue_client(conf_t *conf,int argn,char **argv,char **env)
   uid_t uid = getuid();
   gid_t gid = getgid();
 
+  int pri = 4;
   int jg = 0;
+  char *prip=0;
   char *jgp=0;
-  if (argn>1 && (jgp = strmatch(argv[0],"jg=")))
+  
+  while (argn>1 && ( (prip = strmatch(argv[0],"pri=")) ||
+                     (jgp  = strmatch(argv[0],"jg=")))  )
     {
-    jg = atoi(jgp);
+    if (argv[0][0] == 'p')
+      {
+      pri = atoi(prip);
+      if (pri<0) pri=0;
+      if (pri>7) pri=7;
+      }
+    else
+      {
+      jg = atoi(jgp);
+      }
+    
     argn --;
     argv ++;
     }
@@ -238,6 +252,7 @@ int enqueue_client(conf_t *conf,int argn,char **argv,char **env)
   hdr.kind  = DK_enqueue;    // queue.c: server_enqueue
   hdr.size  = jsize+1;
   hdr.value[0] = jg;
+  hdr.value[1] = pri;
   rdr.kind  = DK_reject;
 
   int count;
@@ -342,6 +357,11 @@ void parse_args_jms(job_match_spec_t *jms,int argn,char **argv)
         { // job group
         jms->spec |= JMS_JG;
         jms->jg = atoi(eq+1);
+        }
+      else if (o=='p' && argi+1<argn)
+        { // priority
+        jms->spec |= JMS_PRI;
+        jms->pri = atoi(eq+1);
         }
       else if (o=='a')
         { // select all jobs

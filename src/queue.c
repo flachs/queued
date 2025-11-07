@@ -651,15 +651,20 @@ struct timespec get_job_time(joblink_t *jl)
   return jstat.st_ctim;
   }
 
-/* insert job into q maintaining age order */
-void insert_into_list_sorted_newest_oldest(uidlink_t *ul,joblink_t *jl)
+/* insert job into q maintaining priority and age order
+   priority 0 schedules before priority 7 */
+static inline int sort_order(joblink_t *jl,joblink_t *p)
   {
-  // job time is create time of job directory
-  jl->ct = get_job_time(jl);
-  
+  if (jl->pri>p->pri) return 1;
+  if (jl->pri==p->pri && earlier(jl->ct,p->ct)) return 1;
+  return 0;
+  }
+
+void insert_into_list_sorted_fromh(uidlink_t *ul,joblink_t *jl)
+  {
   // search for spot in user list between older job and newer job
   joblink_t *p;
-  for (p=ul->head; p && earlier(jl->ct,p->ct); p=p->un) ;
+  for (p=ul->head; p && sort_order(jl,p) ; p=p->un);
   
   // put job in order from newest to oldest
   if (p) add_link_before(p,jl,u);
@@ -667,6 +672,45 @@ void insert_into_list_sorted_newest_oldest(uidlink_t *ul,joblink_t *jl)
   
   jl->u = ul;
   }
+
+void insert_into_list_sorted_fromt(uidlink_t *ul,joblink_t *jl)
+  {
+  // search for spot in user list between older job and newer job
+  joblink_t *p;
+  for (p=ul->tail; p && !sort_order(jl,p) ; p=p->up);
+  
+  // put job in order from newest to oldest
+  if (p) add_link_after(p,jl,u);
+  else   add_link_to_head(ul,jl,u);
+  
+  jl->u = ul;
+  }
+
+void insert_into_list_sorted(uidlink_t *ul,joblink_t *jl)
+  {
+  if (ul->head==NULL)
+    { // first one
+    add_link_to_head(ul,jl,u);
+    return;
+    }
+
+  if (jl->pri == ul->tail->pri)
+    { // closer to tail
+    insert_into_list_sorted_fromt(ul,jl);
+    return;
+    }
+  
+  if (jl->pri == ul->head->pri)
+    {
+    // closer to head
+    insert_into_list_sorted_fromh(ul,jl);
+    return;
+    }
+  
+  // closer to tail?
+  insert_into_list_sorted_fromt(ul,jl);
+  }
+
 
 /* recieve a jobdir from enqueue */
 joblink_t *recieve_jobinfo(sendhdr_t *hdr,
@@ -679,6 +723,7 @@ joblink_t *recieve_jobinfo(sendhdr_t *hdr,
   
   jl->gid = hdr->gid;
   jl->jg  = hdr->value[0];
+  jl->pri = hdr->value[1];
   
   jl->dir = malloc(strlen(dir)+1+msgsize+1);
   char *dp = cpystring(jl->dir,dir);
@@ -748,8 +793,11 @@ void server_enqueue(server_thread_args_t *client)
     return;
     }
 
+  // job create time of job directory
+  jl->ct = get_job_time(jl);
+  
   // enter it into the system
-  insert_into_list_sorted_newest_oldest(ul,jl);
+  insert_into_list_sorted(ul,jl);
 
   // printf("enqueueing uid %d %d %d\n",hdr.uid,ul->uid,jl->u->uid);
   

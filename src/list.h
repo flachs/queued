@@ -33,4 +33,13 @@
   point->u##p = jl;                        \
   } while (0)
 
+#define add_link_after(point,jl,u) do     \
+  {                                        \
+  jl->u##p = point;                        \
+  jl->u##n = point->u##n;                  \
+  if (point->u##n) point->u##n->u##p = jl; \
+  else u##l->tail = jl;                    \
+  point->u##n = jl;                        \
+  } while (0)
+
 

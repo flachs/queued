@@ -257,6 +257,7 @@ typedef struct joblink_s
   struct timespec ct;        // job create time (of dir)
   char *dir;                 // dir of job 
   int jg;                    // job group from user
+  int pri;                   // priority from user
   int nparms;                // number of parms
   char **parms;              // array of pointers to parms
   int keep;                  // what do do with dir after done
@@ -274,14 +275,15 @@ typedef struct
 // job match spec for listing/dequeuing jobs
 typedef enum
   {
-  JMS_JG      = 1<<0,
-  JMS_CMDRE   = 1<<1,
-  JMS_CMDSS   = 1<<2,
-  JMS_JOBDIR  = 1<<3,
-  JMS_TIME    = 1<<4,
-  JMS_HOST    = 1<<5,
-  JMS_USER    = 1<<6,
-  JMS_ALL     = 1<<7
+  JMS_PRI     = 1<<0,
+  JMS_JG      = 1<<1,
+  JMS_CMDRE   = 1<<2,
+  JMS_CMDSS   = 1<<3,
+  JMS_JOBDIR  = 1<<4,
+  JMS_TIME    = 1<<5,
+  JMS_HOST    = 1<<6,
+  JMS_USER    = 1<<7,
+  JMS_ALL     = 1<<8
   } jms_spec_t;
   
 typedef struct
@@ -289,6 +291,7 @@ typedef struct
   jms_spec_t spec; // valid bits
   uid_t uid;       // job owner (-1 for all)
   int   jg;        // job group
+  int   pri;       // job priority
   time_t beg,end;  // create time interval
   char value[];    // string data: command, host or dir
   } job_match_spec_t;
