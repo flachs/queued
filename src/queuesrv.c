@@ -301,6 +301,7 @@ void server_runjob(server_thread_args_t *client)
 
   // run the job
   launch_control(jl);
+  free_jl(jl);
   }
 
 /* find a job in the table and send a TERM to all processes
