@@ -182,7 +182,8 @@ const char *rm_rf_command="/bin/rm -rf ";
 void update_job_dir_when_done(joblink_t *jl,int status)
   {
   // it is done -- save status
-  int sfd = openjob(jl->dir,"status",O_WRONLY|O_CREAT,NULL);
+  extern const char *fn_status;  // in q.c
+  int sfd = openjob(jl->dir,fn_status,O_WRONLY|O_CREAT,NULL);
   if (sfd>=0)
     {
     dprintf(sfd,"%d\n",status);
@@ -234,7 +235,7 @@ void *launch_control(void *va)
   
   int child = server_child_fork(hdr->uid,hdr->gid,
                                 -1,-1,-1,-1,
-                                jl->dir,
+                                jl->dir,jl->tag,
                                 pc.wdir,pc.cmd,pc.env);
 
   free(pc.env);

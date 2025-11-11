@@ -42,6 +42,7 @@ void rm_jobdir(uid_t uid, char *jname)
 
 static char *make_jobdir(conf_t *conf,char *lhostname,
                          uid_t uid,gid_t gid,
+                         int pri,int jg,
                          int argn,char **argv,char **env)
   {
   // find the command
@@ -161,6 +162,8 @@ static char *make_jobdir(conf_t *conf,char *lhostname,
   hdr.uid   = uid;
   hdr.gid   = gid;
   hdr.kind  = DK_runcmd;
+  hdr.value[0] = jg;
+  hdr.value[1] = pri;
 
   char *cwd = run_client_calc_env_size(&hdr,argn-acmd,argv+acmd,env);
   
@@ -239,7 +242,8 @@ int enqueue_client(conf_t *conf,int argn,char **argv,char **env)
     exit(1);
     }
   
-  char *jname = make_jobdir(conf,lhostname,uid,gid,argn,argv,env);
+  char *jname = make_jobdir(conf,lhostname,uid,gid,pri,jg,
+                            argn,argv,env);
   
   if (! jname) return 1;
   size_t jsize = strlen(jname);

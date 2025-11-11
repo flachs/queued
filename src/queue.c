@@ -991,3 +991,18 @@ void server_lsq(server_thread_args_t *client)
   dlc_string_free(&response);
   }
 
+
+/* master: reload running state from .queue dirs */
+void load_queue_state(conf_t *conf)
+  {
+  setpwent();
+
+  struct passwd *pwe;
+
+  while (pwe = getpwent())
+    {
+    printf("%s %d %s\n",pwe->pw_name,pwe->pw_uid,pwe->pw_dir);
+    
+    }
+  }
+

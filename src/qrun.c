@@ -346,7 +346,7 @@ void setup_stream(int dfd,int fd,
  */
 int server_child_fork(uid_t uid,gid_t gid,
                       int csfd,int sifd,int sofd,int sefd,
-                      char *jd,
+                      char *jd,uint64_t tag,
                       char *wdir,char *cmd,char **env)
   {
   int childpid = fork();
@@ -377,10 +377,11 @@ int server_child_fork(uid_t uid,gid_t gid,
 
   if (jd)
     {
-    int mfd = openjob(jd,"machine",O_WRONLY|O_CREAT,NULL);
+    extern const char *fn_machine;
+    int mfd = openjob(jd,fn_machine,O_WRONLY|O_CREAT,NULL);
     if (mfd)
       {
-      dprintf(mfd,"%s %d\n",hostname(),mypid);
+      dprintf(mfd,"%s %d %016lp\n",hostname(),mypid,tag);
       close(mfd);
       }
     }
@@ -525,7 +526,7 @@ void server_run(server_thread_args_t *client)
                                    ss->sock,
                                    ss->io_sock,ss->io_sock,
                                    ss->se_sock,
-                                   NULL,
+                                   NULL,0,
                                    ss->wdir,ss->cmd,ss->env);
   
   close(ss->io_sock);	// child handles stdio socket 

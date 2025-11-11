@@ -29,6 +29,7 @@ optdes options[] =
     { "t"         ,"list tokens",NULL },
     { "d"         ,"delete job",NULL },
     { "s"         ,"probe status",NULL },
+    { "lqs"       ,"load queue state",NULL },
     { NULL, NULL, NULL },
     };
 
@@ -340,6 +341,9 @@ void server(conf_t *conf,int argn,char **argv)
   
   //printlog("%s\n",__FUNCTION__);
   int server_sockfd = open_server_socket( getserviceport() );
+
+  if (master && dlc_option_value(NULL,"lqs"))
+    load_queue_state(conf);
   
   // enable_autoreaping();
   
@@ -476,6 +480,16 @@ char *getqueuemasterhostname()
   {
   return dlc_option_value(NULL,"master");
   }
+
+/* collection of string constants */
+
+// in jobdir, created by launch_control with exit code
+const char *fn_status = "status";
+
+// in jobdir, created by launch_control/server_child_fork
+// before execle with: hostname pid tag
+const char *fn_machine = "machine"; 
+
 
 int main(int argn,char **argv,char **env)
   {

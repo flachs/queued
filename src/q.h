@@ -435,6 +435,7 @@ int openjob(const char *dir,const char *file,int flags,off_t *filesize);
 void server_lsq(server_thread_args_t *client);
 void server_list(server_thread_args_t *client);
 void server_tokens(server_thread_args_t *client);
+void load_queue_state(conf_t *conf);
 
 // qrun.c
 char *strmatchany(char *b,...);
@@ -450,7 +451,7 @@ void *malloc_env_list(char *envp,int nenviro);
 char *glue_cmd_spaces(char *cmd,int argn);
 int server_child_fork(uid_t uid,gid_t gid,
                       int csfd,int sifd,int sofd,int sefd,
-                      char *jd,
+                      char *jd,uint64_t tag,
                       char *wdir,char *cmd,char **env);
 int run_localhost(int needfork,int argn,char **argv,char **env);
 int run_remotehost(int multihost,char *rhostname,
