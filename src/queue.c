@@ -758,6 +758,7 @@ void server_enqueue(server_thread_args_t *client)
     hdr.kind = DK_reject;
     hdr.size = 0;
     send_response(sock,&hdr,NULL);
+    free_jl(jl);
     return;
     }
   
