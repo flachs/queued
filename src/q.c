@@ -92,6 +92,10 @@ void server_usr2handler (int sig)
   {
   }
 
+void server_alrmhandler (int sig)
+  {
+  }
+
 void server_ctrlchandler (int sig)
   {
   exit(1);  // invoke atexit to remove pidfile
@@ -335,9 +339,10 @@ void server(conf_t *conf,int argn,char **argv)
   
   create_pid_file(hostn);
 
-  install_sighandler(SIGINT,server_ctrlchandler);  
-  install_sighandler(SIGINT,server_usr1handler);  
-  install_sighandler(SIGINT,server_usr2handler);  
+  install_sighandler(SIGINT ,server_ctrlchandler);  
+  install_sighandler(SIGUSR1,server_usr1handler);  
+  install_sighandler(SIGUSR2,server_usr2handler);  
+  install_sighandler(SIGALRM,server_alrmhandler);  
   
   //printlog("%s\n",__FUNCTION__);
   int server_sockfd = open_server_socket( getserviceport() );

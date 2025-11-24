@@ -60,3 +60,4 @@ host.o : host.c list.h
 
 clean:
 	rm -f $(OFILES) q TAGS
+	cd trio ; make clean
