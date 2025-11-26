@@ -1,6 +1,3 @@
-#include <sys/types.h>
-#include <pwd.h>
-
 #include "q.h"
 #include "list.h"
 
@@ -36,28 +33,41 @@ static inline int getpwuid_r_bufsize()
   return bufsize;
   }
 
+uidlink_t *build_uid(struct passwd *pwe)
+  {
+  uidlink_t *p = calloc(sizeof(uidlink_t),1);
+
+  add_link_to_head(&uidlist,p,u);
+  
+  p->dir = malloc(strlen(pwe->pw_dir)+1+
+                  strlen(queuedd)+1);
+  p->name = malloc(strlen(pwe->pw_name)+1);
+  strcpy(p->name,pwe->pw_name);
+  
+  char *qd = cpystring(p->dir,pwe->pw_dir);
+  *qd++ = '/';
+  qd = cpystring(qd,queuedd);
+  p->uid = pwe->pw_uid;
+  return p;
+  }
+
 uidlink_t *find_or_make_uid(uid_t uid)
   {
   uidlink_t *p = find_uid(uid);
   if (p) return p;
 
-  p = calloc(sizeof(uidlink_t),1);
-
-  add_link_to_head(&uidlist,p,u);
-  
   struct passwd pwent,*pwresult;
   char buf[getpwuid_r_bufsize()];
   getpwuid_r(uid,&pwent,buf,sizeof(buf),&pwresult);
 
-  p->dir = malloc(strlen(pwent.pw_dir)+1+
-                  strlen(queuedd)+1);
-  p->name = malloc(strlen(pwent.pw_name)+1);
-  strcpy(p->name,pwent.pw_name);
-  
-  char *qd = cpystring(p->dir,pwent.pw_dir);
-  *qd++ = '/';
-  qd = cpystring(qd,queuedd);
-  p->uid = uid;
-  return p;
+  return build_uid(&pwent);
+  }
+
+uidlink_t *find_or_make_pwe(struct passwd *pwe)
+  {
+  uidlink_t *p = find_uid(pwe->pw_uid);
+  if (p) return p;
+
+  return build_uid(pwe);
   }
 

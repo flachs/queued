@@ -16,7 +16,8 @@ typedef struct proctabe_s
   int next,chhead;
   unsigned int uid,pid,ppid,tty,threads;
   unsigned char state;
-  uint64_t tag,vsize,rsize;
+  joblink_t *tag;
+  uint64_t vsize,rsize;
   char *top;
   char com[MAX_COMLEN];
   } proctabe_t;
@@ -165,7 +166,7 @@ void print_proc_table(const char *logfilename)
 /* mark a tree of parents->children as belonging to a job
    running in the q -- might be more consistent to base
    belong to the q on process group */
-int mark_proc_inq(int pid,uint64_t tag,char *dir,uid_t uid,int ind)
+int mark_proc_inq(int pid,joblink_t *tag,char *dir,uid_t uid,int ind)
   {
   proctabe_t *pt=proctab.t;
 
@@ -243,7 +244,7 @@ void print_children(int lev,int pid,proctab_t *pt)
   }
 
 // find a tag in the running_stats table
-running_stats_t *find_tag_slot(running_stats_t *s,int n,uint64_t tag)
+running_stats_t *find_tag_slot(running_stats_t *s,int n,joblink_t *tag)
   {
   running_stats_t *p = s+1, *e = s+n;
   

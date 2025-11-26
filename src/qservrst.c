@@ -2,7 +2,7 @@
 
 void server_restart(server_thread_args_t *client)
   {
-  extern int server_restart_req;
+  extern volatile int server_restart_req;
 
   server_restart_req = 1;
   
@@ -15,9 +15,24 @@ void server_restart(server_thread_args_t *client)
   send_response(sock,&hdr,NULL);
   }
 
+void server_reload(server_thread_args_t *client)
+  {
+  extern volatile int reload_conf;
+
+  reload_conf = 1;
+  
+  sendhdr_t hdr = client->hdr;
+  int sock = client->sock;
+
+  hdr.kind = DK_echorep;
+  hdr.size = 0;
+  
+  send_response(sock,&hdr,NULL);
+  }
+
 void server_terminate(server_thread_args_t *client)
   {
-  extern int server_restart_req;
+  extern volatile int server_restart_req;
 
   server_restart_req = 2;
   
@@ -35,7 +50,8 @@ int terminator(conf_t *conf,const char *hostname,void *p)
   datakind_t kind = (datakind_t)(p);
   
   int port = getserviceport();
-  char *msg = kind==DK_restart   ? "restarting" :
+  char *msg = kind==DK_reload    ? "reloading" :
+              kind==DK_restart   ? "restarting" :
               kind==DK_terminate ? "terminating" : NULL;
 
   if (! msg)
@@ -79,4 +95,18 @@ int terminate_client(conf_t *conf,int argn,char **argv,char **env)
   
   return for_each_host(conf,host,
                        terminator,(void *)DK_terminate);
+  }
+
+int reload_client(conf_t *conf,int argn,char **argv,char **env)
+  {
+  char *host = 0;
+  if (argn>0)
+    {
+    host = *argv++;
+    argn--;
+    }
+  else
+    host="master";
+
+  return for_each_host(conf,host,terminator,(void *)DK_reload);
   }

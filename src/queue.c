@@ -22,24 +22,6 @@
 
 extern const sendhdr_t hdr_zero;
 
-static inline int cmp_timespec(struct timespec first,struct timespec second)
-  {
-  if (second.tv_sec == first.tv_sec)
-    return signed_step( second.tv_nsec - first.tv_nsec );
-  return signed_step(second.tv_sec - first.tv_sec);
-  }
-
-static inline int later(struct timespec first,struct timespec second)
-  {
-  if (second.tv_sec == first.tv_sec) return second.tv_nsec > first.tv_nsec;
-  return second.tv_sec > first.tv_sec;
-  }
-static inline int earlier(struct timespec first,struct timespec second)
-  {
-  if (second.tv_sec == first.tv_sec) return second.tv_nsec < first.tv_nsec;
-  return second.tv_sec < first.tv_sec;
-  }
-
 void print_user_list(joblink_t *it)
   {
   uidlink_t *ul = uidlist_head();
@@ -61,7 +43,36 @@ void print_user_list(joblink_t *it)
   }
 
 // open a files in a job dir and also return its size
-int openjob(const char *dir,const char *file,int flags,off_t *filesize)
+int fstat_retry(int fd, const char *file, int flags,
+                off_t *filesize,struct timespec  *mtime)
+  {
+  if (! (filesize || mtime)) return fd;
+  
+  struct stat sb;
+  memset(&sb,0,sizeof(sb));
+
+  int tries=0;
+  while (fstat(fd,&sb)) 
+    {
+    if (tries>30)
+      {
+      close(fd);
+      fprintf(stderr,"openjob(%d) %s %x %d\n",
+              tries,file,flags,fd);
+      perror("fstat failed");
+      return -1;
+      }
+    usleep(10000);
+    tries++;
+    }
+    
+  if (filesize) *filesize = sb.st_size;
+  if (mtime)    *mtime    = sb.st_mtim;
+  return fd;
+  }
+
+int openjob(const char *dir,const char *file,int flags,
+            off_t *filesize,struct timespec  *mtime)
   {
   int pathlen = strlen(dir);
   int filelen = strlen(file);
@@ -80,42 +91,32 @@ int openjob(const char *dir,const char *file,int flags,off_t *filesize)
 
 #ifdef regfd    
   regfd("open",fd);
-#endif  
-  if (filesize)
-    {
-    struct stat statbuf;
-    statbuf.st_size = 0;
+#endif
 
-    int tries=0;
-    while (fstat(fd,&statbuf)) 
-      {
-      if (tries>30)
-        {
-        close(fd);
-        fprintf(stderr,"openjob(%d) %s %s %x %d\n",
-                tries,dir,file,flags,fd);
-        perror("fstat failed");
-        return -1;
-        }
-      usleep(10000);
-      tries++;
-      }
-    
-    *filesize = statbuf.st_size;
+  return fstat_retry(fd, file, flags, filesize, mtime);    
+  }
+
+int openjobat(int jd,const char *file,int flags,
+              off_t *filesize,struct timespec  *mtime)
+  {
+  int fd = openat(jd,file,flags,0666);
+  if (fd<0)
+    {
+    if (filesize) *filesize = 0;
+    return fd;
     }
+
+#ifdef regfd    
+  regfd("open",fd);
+#endif
   
-  return fd;
+  return fstat_retry(fd, file, flags, filesize, mtime);
   }
 
 /* read the parm file - a number of parms deal with
    matters important to job requirements */
-int read_parse_parms(const char *dir,char ***parmsp)
+int malloc_parse_parms(int pfd,off_t parmsize,char ***parmsp)
   {
-  off_t parmsize;
-  
-  int pfd = openjob(dir,"parm",O_RDONLY,&parmsize);
-  if (pfd<0) return 0;
-  
   char *pbuf = malloc(parmsize);
   read(pfd,pbuf,parmsize);
   close(pfd);
@@ -133,6 +134,28 @@ int read_parse_parms(const char *dir,char ***parmsp)
       parms[n++] = pbuf+i+1;
       }
   return nparms;
+  }
+
+int read_parse_parms(const char *dir,char ***parmsp)
+  {
+  off_t parmsize;
+
+  extern const char *fn_parm;
+  int pfd = openjob(dir,fn_parm,O_RDONLY,&parmsize,NULL);
+  if (pfd<0) return 0;
+
+  return malloc_parse_parms(pfd,parmsize,parmsp);
+  }
+
+int read_parse_parmsat(int fd,char ***parmsp)
+  {
+  off_t parmsize;
+  
+  extern const char *fn_parm;
+  int pfd = openjobat(fd,fn_parm,O_RDONLY,&parmsize,NULL);
+  if (pfd<0) return 0;
+  
+  return malloc_parse_parms(pfd,parmsize,parmsp);
   }
 
 // search parms for a parm - return pointer to string value
@@ -567,6 +590,22 @@ int pick_job_hl(conf_t *conf,
 
 /* do the accounting for assigning a job to a host and
    either send it there or launch it on this host */
+
+void account_job_start(hostlink_t *hl,joblink_t *jl)
+  {
+  claim_tokens(jl);
+  
+  hl->used_memory += jl->mem;
+  hl->used_threads += jl->threads;
+  hl->jobs_running ++;
+
+  jl->u->threads += jl->threads;
+  clock_gettime(CLOCK_REALTIME, &jl->u->l_start);
+  
+  // put job in host list
+  add_link_to_head(hl,jl,h);
+  }
+
 int schedule_job_hl(conf_t *conf,
                     hostlink_t *hl,
                     joblink_t *jl,
@@ -579,18 +618,8 @@ int schedule_job_hl(conf_t *conf,
   
   jl->threads = threads;
 
-  claim_tokens(jl);
-  
-  hl->used_memory += jl->mem;
-  hl->used_threads += jl->threads;
-  hl->jobs_running ++;
-
-  jl->u->threads += jl->threads;
-  clock_gettime(CLOCK_REALTIME, &jl->u->l_start);
-  
-  // put job in host list
-  add_link_to_head(hl,jl,h);
-  
+  account_job_start(hl,jl);
+    
   // send the job
   if (strcmp(hl->host,hostname()))
     { // remote host
@@ -600,7 +629,7 @@ int schedule_job_hl(conf_t *conf,
   else
     { // local host -- fork a control thread
     if (0) fprintf(stderr,"   sjhl-local: \n");
-    jl->tag = (uint64_t)jl;
+    jl->tag = jl;
     pthread_detached(&launch_control,jl);
     }
 
@@ -656,7 +685,7 @@ struct timespec get_job_time(joblink_t *jl)
 static inline int sort_order(joblink_t *jl,joblink_t *p)
   {
   if (jl->pri>p->pri) return 1;
-  if (jl->pri==p->pri && earlier(jl->ct,p->ct)) return 1;
+  if (jl->pri==p->pri && isearlier(jl->ct,p->ct)) return 1;
   return 0;
   }
 
@@ -734,6 +763,11 @@ joblink_t *recieve_jobinfo(sendhdr_t *hdr,
   return jl;
   }
 
+/* find out if job was loaded during init
+   if job is already registered, free the newly recieved one
+   if job is new then return it
+*/
+
 // master side of enqueue.c: enqueue_client
 multsuf_t Msuf_tab[3] = 
   {
@@ -750,6 +784,12 @@ void server_enqueue(server_thread_args_t *client)
   uidlink_t *ul = find_or_make_uid(hdr.uid);
   joblink_t *jl = recieve_jobinfo(&hdr,ul->dir,sock);
 
+  if (find_job_dir(ul,jl->dir))
+    { // loaded job during recovery startup
+    free_jl(jl);
+    return;
+    }
+  
   // make sure cmd is present
   sendhdr_t *chdr=get_job_cmd(jl->dir,NULL);
   if (! chdr)
@@ -832,7 +872,7 @@ int user_sorter(const void *a,const void *b)
   }
 
 
-void schedule_host(conf_t *conf,hostlink_t *hl)
+void schedule_hl(conf_t *conf,hostlink_t *hl)
   {
   uidlink_t *ul;
 
@@ -880,6 +920,20 @@ void schedule_host(conf_t *conf,hostlink_t *hl)
     }
   }
 
+int schedule_host(conf_t *conf,const char *host,void *info)
+  {
+  hostlink_t *hl = get_host_state(host);
+  schedule_hl(conf,hl);
+  }
+
+void schedule_host_group(conf_t *conf,const char *grp)
+  {
+  for_each_host(conf,
+                grp,
+                schedule_host,
+                NULL);
+  }
+
 // master receives notification job is done from
 // server's launch_control
 void server_jobdone(server_thread_args_t *client)
@@ -887,7 +941,8 @@ void server_jobdone(server_thread_args_t *client)
   sendhdr_t hdr = client->hdr;
   int sock = client->sock;
   int status = hdr.value[3];
-  joblink_t *jl = get_tag_ui32x2(hdr.value);
+
+  joblink_t *jl = find_job_tag(get_tag_ui32x2(hdr.value));
 
   if (0) fprintf(stderr,"sjd: %p\n",jl);
   
@@ -911,7 +966,7 @@ void server_jobdone(server_thread_args_t *client)
   hdr.size = 0;
   send_response(sock,&hdr,NULL);
 
-  schedule_host(client->conf,hl);
+  schedule_hl(client->conf,hl);
   }
 
 int append_host_state(conf_t *conf,const char *host,void *info)
@@ -990,20 +1045,5 @@ void server_lsq(server_thread_args_t *client)
   hdr.kind = DK_reply;
   send_response(client->sock,&hdr,response->t);
   dlc_string_free(&response);
-  }
-
-
-/* master: reload running state from .queue dirs */
-void load_queue_state(conf_t *conf)
-  {
-  setpwent();
-
-  struct passwd *pwe;
-
-  while (pwe = getpwent())
-    {
-    printf("%s %d %s\n",pwe->pw_name,pwe->pw_uid,pwe->pw_dir);
-    
-    }
   }
 

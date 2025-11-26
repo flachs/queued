@@ -178,6 +178,19 @@ Some systems running systemd might benefit from the queued.service example in th
 When q starts, it reads the configuration file `/etc/queued.conf`. 
 The source directory contains an example file.
 
+Comments begin with `#` and continue to the end of line.
+
+## Service Port
+The daemon opens a port for recieving messages from the client or other servers.
+The port number defaults to `9090` but can be set with a command line option -p 9090 or
+in the config file with:
+
+```
+port server = 9090;
+```
+
+The port number used must not conflict with other services and must be open in the firewall configuration.
+
 ## Pid Directory
 There must be a directory in a shared filesystem to store the pid files created by the sever daemons.
 The pid files will be created when the daemon starts and contain the server key.
@@ -229,4 +242,32 @@ and they hold thier tokens until they exit.
 token LIC = 2;
 ```
 
+## Kick Start
+Queued schedules jobs on any available machine with sufficient resources when they are submitted.
+When a job completes on a machine, queued attempts to schedule as many jobs as it can on that machine.
+By default, if for some reason a new job cannot be scheduled when the last job running on a machine exits,
+no job will be scheduled on that machine until a new job is submitted.
+If it is possible that other uses of the system may consume resources that prevent scheduling, and
+those resources free up, a kick start timer can be configured with:
+
+```
+alarm kickstart = 30m;
+```
+
+When the kick start timer expires, the master will attempt to schedule jobs on all hosts.
+Time is in seconds, but can be suffixed with:
+
+* `m` for minutes,
+* `h` for hours and
+* `d` for days.
+
+## Configuration Reload
+A daemon will reload the configuration file if it handles SIGUSR1, or recieves a request from a client:
+
+```
+% q -reload [host|group]
+```
+
+If host is not specified, the group master is used by default. 
+The daemon will not recognize a change to `dir pid` during an update.
 

@@ -183,7 +183,8 @@ static char *make_jobdir(conf_t *conf,char *lhostname,
   write(fd_cmd,buffer,hdr.size);
   close(fd_cmd);
 
-  if (renameat(fd_jobdir,"xxx",fd_jobdir,"cmd"))
+  extern const char *fn_xxx,*fn_cmd;
+  if (renameat(fd_jobdir,fn_xxx,fd_jobdir,fn_cmd))
     {
     fprintf(stderr,"cant rename xxx -> cmd %s\n",queued_dir);
     close(fd_jobdir);

@@ -20,6 +20,7 @@
 #include <stdarg.h>
 #include <pthread.h>
 #include <arpa/inet.h>
+#include <pwd.h>
 
 #include "dlc_option.h"
 #include "qconf.h"
@@ -42,7 +43,7 @@ typedef struct
 // information about a job running under q system
 typedef struct
   {
-  uint64_t tag;   // jl pointer on master for a job
+  struct joblink_s *tag; // jl pointer on master for a job
   uint32_t vsize; // virtual memory size (kB)
   uint32_t rsize; // resident memory size (kB)
   int proc,       // number of processes
@@ -120,6 +121,7 @@ typedef enum
   DK_echorep,
   DK_restart,
   DK_terminate,
+  DK_reload,
   
   DK_gettime,     // cl or master to master or server
   DK_timerep,     // reply
@@ -155,6 +157,7 @@ typedef struct
   datakind_t kind;
   uint32_t size;     // size of payload that follows header
   uint32_t value[6];
+  char payload[0];
   } sendhdr_t;
 
 /* sendhdr_t value     0     1     2     3     4     5
@@ -180,6 +183,34 @@ typedef int client_func_t(conf_t *conf,int argn,char **argv,char **env);
 
 // for each host handlers
 typedef int (feh_func_t)(conf_t *conf,const char *host,void *p);
+
+// help with timespec
+static inline int cmp_timespec(struct timespec first,struct timespec second)
+  {
+  if (second.tv_sec == first.tv_sec)
+    return signed_step( second.tv_nsec - first.tv_nsec );
+  return signed_step(second.tv_sec - first.tv_sec);
+  }
+
+static inline int islater(struct timespec first,struct timespec second)
+  {
+  if (second.tv_sec == first.tv_sec) return second.tv_nsec > first.tv_nsec;
+  return second.tv_sec > first.tv_sec;
+  }
+static inline int isearlier(struct timespec first,struct timespec second)
+  {
+  if (second.tv_sec == first.tv_sec) return second.tv_nsec < first.tv_nsec;
+  return second.tv_sec < first.tv_sec;
+  }
+
+static inline struct timespec later(struct timespec first,struct timespec second)
+  {
+  return islater(first,second) ? first : second;
+  }
+static inline struct timespec earlier(struct timespec first,struct timespec second)
+  {
+  return isearlier(first,second) ? first : second;
+  }
 
 // copy a 0 terminated string and return a pointer to
 // next place to append
@@ -249,10 +280,12 @@ typedef struct joblink_s
   {
   struct joblink_s *un,*up;  // uid job list
   struct joblink_s *hn,*hp;  // host job list
+  struct joblink_s *xn,*xp;  // jobs running  list
   struct uidlink_s *u;       // user link
   struct hostlink_s *h;      // host link
+  struct prilist_s *x;       // prior job list
   
-  uint64_t tag;              // pointer to jl in server
+  struct joblink_s *tag;     // pointer to jl in server
   gid_t gid;                 // group id 
   struct timespec ct;        // job create time (of dir)
   char *dir;                 // dir of job 
@@ -348,6 +381,7 @@ uidlink_t *uidlist_head();
 uidlink_t *find_uid(uid_t uid);
 uidlink_t *find_uid_by_name(char *name);
 uidlink_t *find_or_make_uid(uid_t uid);
+uidlink_t *find_or_make_pwe(struct passwd *pwe);
 
 // host.c
 void print_host_list(joblink_t *it);
@@ -398,7 +432,7 @@ time_t parse_time(char *tos);
 queuestatus_t *readqueuestatus();
 void update_job_dir_when_done(joblink_t *jl,int status);
 void *launch_control(void *va);
-int kill_job(uint64_t tag);
+int kill_job(joblink_t *tag);
 void server_killjob(server_thread_args_t *client);
 void server_runjob(server_thread_args_t *client);
 sendhdr_t *get_job_cmd(char *dir,parsed_cmd_t *pc);
@@ -406,7 +440,9 @@ void mark_proc_inqueue();
 
 // qservrst.c
 void server_restart(server_thread_args_t *client);
+void server_reload(server_thread_args_t *client);
 client_func_t restart_client;
+client_func_t reload_client;
 void server_terminate(server_thread_args_t *client);
 client_func_t terminate_client;
 
@@ -417,7 +453,9 @@ const char *find_parm(const char *name,
                       int nparms, char **parml,
                       const char *def);
 int read_parse_parms(const char *dir,char ***parmsp);
+int read_parse_parmsat(int fd,char ***parmsp);
 joblink_t *make_jl();
+void schedule_host_group(conf_t *conf,const char *grp);
 void server_jobdone(server_thread_args_t *client);
 statusinfomsg_t *get_myhost_status(int mypid,statusinfomsg_t **psi);
 statusinfomsg_t *get_host_status(const char *host,int client,
@@ -425,13 +463,18 @@ statusinfomsg_t *get_host_status(const char *host,int client,
 statusinfomsg_t *get_hl_status(hostlink_t *hl,int client,
                                time_t recent);
 int send_kill(const char *host,joblink_t *jl);
+void account_job_start(hostlink_t *hl,joblink_t *jl);
+void insert_into_list_sorted(uidlink_t *ul,joblink_t *jl);
 void server_enqueue(server_thread_args_t *client);
 void server_dequeue(server_thread_args_t *client);
 client_func_t enqueue_client;
 client_func_t dequeue_client;
 client_func_t listqueue_client;
 client_func_t listtokens_client;
-int openjob(const char *dir,const char *file,int flags,off_t *filesize);
+int openjob(const char *dir,const char *file,int flags,
+            off_t *filesize,struct timespec *mtime);
+int openjobat(int jd,const char *file,int flags,
+              off_t *filesize,struct timespec *mtime);
 void server_lsq(server_thread_args_t *client);
 void server_list(server_thread_args_t *client);
 void server_tokens(server_thread_args_t *client);
@@ -451,7 +494,7 @@ void *malloc_env_list(char *envp,int nenviro);
 char *glue_cmd_spaces(char *cmd,int argn);
 int server_child_fork(uid_t uid,gid_t gid,
                       int csfd,int sifd,int sofd,int sefd,
-                      char *jd,uint64_t tag,
+                      char *jd,joblink_t *tag,int threads,
                       char *wdir,char *cmd,char **env);
 int run_localhost(int needfork,int argn,char **argv,char **env);
 int run_remotehost(int multihost,char *rhostname,
@@ -463,7 +506,7 @@ computerinfo_t readcpuinfo();
 computerstatus_t readcpustatus();
 
 // qps.c
-int mark_proc_inq(int pid,uint64_t tag,char *dir,uid_t uid,int ind);
+int mark_proc_inq(int pid,joblink_t *tag,char *dir,uid_t uid,int ind);
 
 // tty_stat.c
 void tty_stat(time_t *seconds_since_most_recent_activity,
@@ -472,5 +515,9 @@ void tty_stat(time_t *seconds_since_most_recent_activity,
 // xidle.c
 long x_idle();
 
+// load_qstate.c
+joblink_t *find_job_tag(joblink_t *tag);
+joblink_t *find_job_dir(uidlink_t *ul,char *dir);
+void load_queue_state(conf_t *conf);
 
 #endif

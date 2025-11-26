@@ -2,18 +2,24 @@
  * fix terminate to only work if root orders it
  * factor active users into queue.c:jl_fits_hl()
    maybe mem - active_users * usrmem
- * implement load master/server from running state/dirs
  * Check point and restore / migration from host to host
      maybe use proj/netsrc/criu
  
-
 Done
 ====
 
+ * implement load master/server from running state/dirs
+     enable with -lqs, not tested.
+ * every once in a while try to schedule all hosts
+     config: alarm kickstart = 10[mhd] 
  * provide multiple levels of priority so that a user
    can slip higher priority jobs in front of thier
    lower priority jobs.  Maybe priority=0 through 7
    with priority 0 scheduling before priority 7.
+ * implement conf reload.  two ways:
+     - kill -USR2 the master to get a conf reload.
+     - q -reload [host|group] is the easyway - it sends 
+       message rather than signal.
  * factor available memory into queue.c:jl_fits_hl()
  * pid cache now stats for mtime, reloads if not 
    current.  can kill/end/restart server and pid cache

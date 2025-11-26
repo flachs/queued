@@ -90,7 +90,7 @@ static int find_launched_jl(joblink_t *jl)
   }
 
 // search job list for tag
-static int find_launched_tag(uint64_t tag)
+static int find_launched_tag(joblink_t *tag)
   {
   int i;
   for (i=0;i<number_launched_jobs;i++)
@@ -145,7 +145,7 @@ void mark_proc_inqueue()
 sendhdr_t *get_job_cmd(char *dir,parsed_cmd_t *pc)
   {
   off_t cmdsize=0;
-  int dfd = openjob(dir,"cmd",O_RDONLY,&cmdsize);
+  int dfd = openjob(dir,"cmd",O_RDONLY,&cmdsize,NULL);
   
   if (cmdsize==0) return NULL;
   
@@ -183,7 +183,7 @@ void update_job_dir_when_done(joblink_t *jl,int status)
   {
   // it is done -- save status
   extern const char *fn_status;  // in q.c
-  int sfd = openjob(jl->dir,fn_status,O_WRONLY|O_CREAT,NULL);
+  int sfd = openjob(jl->dir,fn_status,O_WRONLY|O_CREAT,NULL,NULL);
   if (sfd>=0)
     {
     dprintf(sfd,"%d\n",status);
@@ -192,7 +192,7 @@ void update_job_dir_when_done(joblink_t *jl,int status)
 
   // remove job directory if dont want it
   off_t cmdsize;
-  int kfd = openjob(jl->dir,"keep",O_RDONLY,&cmdsize);
+  int kfd = openjob(jl->dir,"keep",O_RDONLY,&cmdsize,NULL);
   if (kfd>=0)
     {
     close(kfd);
@@ -235,7 +235,7 @@ void *launch_control(void *va)
   
   int child = server_child_fork(hdr->uid,hdr->gid,
                                 -1,-1,-1,-1,
-                                jl->dir,jl->tag,
+                                jl->dir,jl->tag,jl->threads,
                                 pc.wdir,pc.cmd,pc.env);
 
   free(pc.env);
@@ -253,7 +253,7 @@ void *launch_control(void *va)
   // send done message to master
   hdr->kind  = DK_jobdone;
   hdr->size  = 0;
-  set_tag_ui32x2_ui64(hdr->value,jl->tag);
+  set_tag_ui32x2_ui64(hdr->value,(uint64_t)(jl->tag));
   hdr->value[3] = status;
   
   simple_request(getqueuemasterhostname(),
@@ -280,7 +280,7 @@ void server_runjob(server_thread_args_t *client)
   jl->dir = malloc(hdr.size);
   recvn(sock,jl->dir,hdr.size,0);
 
-  jl->tag = get_tag_ui32x2_ui64(hdr.value);
+  jl->tag = (joblink_t *)get_tag_ui32x2_ui64(hdr.value);
 
   // have to wait for job file to be ready in nfs
   sendhdr_t *chdr=0;
@@ -307,7 +307,7 @@ void server_runjob(server_thread_args_t *client)
 
 /* find a job in the table and send a TERM to all processes
    in the process group */
-int kill_job(uint64_t tag)
+int kill_job(joblink_t *tag)
   {
   int i = find_launched_tag(tag);
 
@@ -354,7 +354,7 @@ void server_killjob(server_thread_args_t *client)
   sendhdr_t hdr = client->hdr;
   int sock = client->sock;
   
-  uint64_t tag = get_tag_ui32x2_ui64(hdr.value);
+  joblink_t *tag = (joblink_t *)get_tag_ui32x2_ui64(hdr.value);
 
   int error=kill_job(tag);
 

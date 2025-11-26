@@ -1,6 +1,6 @@
 CFLAGS = -g
 
-OFILES = dlc_option.o open_socket.o qecho.o qrun.o qconf.o queue.o enqueue.o queuesrv.o qservrst.o cpuinfo.o dlc_string.o proc.o tty_stat.o pidfile.o uid.o host.o joblink.o qdequeue.o time_format.o runimm.o tokens.o qps.o
+OFILES = dlc_option.o open_socket.o qecho.o qrun.o qconf.o queue.o enqueue.o queuesrv.o qservrst.o cpuinfo.o dlc_string.o proc.o tty_stat.o pidfile.o uid.o host.o joblink.o qdequeue.o time_format.o runimm.o tokens.o qps.o load_qstate.o
 
 CFILES = $(OFILES:.o=.c)
 
@@ -9,6 +9,9 @@ XIDLELIBS  =  -lX11 -lXext -lXss
 INSTALL_DIR = /user/utility/packages/queued/bin
 
 all: q TAGS
+
+$(TEST): $(TEST).c dlc_option.h q.h $(OFILES) trio/libtrio.a 
+	gcc -g -DTEST -DTLQS -o $@ -pthread -Ltrio $< q.c $(OFILES) -lm -ltrio -lpcre2-8
 
 install: q
 	cp q $(INSTALL_DIR)
@@ -47,6 +50,8 @@ qdequeue.o : qdequeue.c q.h list.h
 
 queuesrv.o : queuesrv.c q.h
 
+load_qstate.o : load_qstate.c q.h
+
 runimm.o : runimm.c qconf.c q.h
 
 dlc_string.o : dlc_string.c dlc_string.h
@@ -60,4 +65,3 @@ host.o : host.c list.h
 
 clean:
 	rm -f $(OFILES) q TAGS
-	cd trio ; make clean

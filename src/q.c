@@ -24,6 +24,7 @@ optdes options[] =
     { "master=%s" ,"network queue server hostname",NULL },
     { "restart=%s","server restart on hostname/group",NULL },
     { "term=%s"   ,"server terminate on hostname/group",NULL },
+    { "reload"    ,"server conf reload on hostname/group",NULL },
     { "e"         ,"enqueue job",NULL },
     { "l"         ,"list queue",NULL },
     { "t"         ,"list tokens",NULL },
@@ -82,7 +83,7 @@ void printlog(char *fmt,...)
   if (fp) fclose(fp);
   }
 
-int reload_conf = 0;
+volatile int reload_conf = 0;
 void server_usr1handler (int sig)
   {
   reload_conf = 1;
@@ -92,8 +93,10 @@ void server_usr2handler (int sig)
   {
   }
 
+volatile int trytoschedall=0;
 void server_alrmhandler (int sig)
   {
+  trytoschedall=1;
   }
 
 void server_ctrlchandler (int sig)
@@ -247,6 +250,7 @@ int server_recv_header(server_thread_args_t *a)
   
   switch (hdr->kind)
     {  // synchronous (main thread) actions
+    case DK_reload:     server_reload(a);    return 0;
     case DK_terminate:  server_terminate(a); return 0;
     case DK_restart:    server_restart(a);   return 0;
     case DK_syncecho:   server_echo(a);      return 0;
@@ -292,7 +296,7 @@ static inline void enable_autoreaping()
   done = 1;
   }
 
-int server_restart_req = 0;
+volatile int server_restart_req = 0;
 
 
 void pthread_detached(void *(*start_routine) (void *), void *arg)
@@ -326,6 +330,26 @@ void install_sighandler(int signum, void (*handler)(int))
   sigaction(signum,&sa,&old);
   }
 
+unsigned int get_conf_alrm(conf_t *conf)
+  {
+  confl_t *alarm_kickstart = conf_find(conf,"alarm","kickstart",NULL);
+
+  if (!alarm_kickstart) return 0;
+  
+  char *suf=0;
+  unsigned int alt = strtoul(alarm_kickstart->name,&suf,0);
+  if (suf && *suf)
+    {
+    switch (*suf)
+      {
+      case 'm': alt*=60; break;
+      case 'h': alt*=60*60;  break;
+      case 'd': alt*=24*60*60; break;
+      }
+    }
+  return alt;
+  }
+
 void server(conf_t *conf,int argn,char **argv)
   {
   launch_init();
@@ -349,6 +373,9 @@ void server(conf_t *conf,int argn,char **argv)
 
   if (master && dlc_option_value(NULL,"lqs"))
     load_queue_state(conf);
+
+  int alrm;
+  if (alrm = get_conf_alrm(conf)) alarm(alrm);
   
   // enable_autoreaping();
   
@@ -358,6 +385,18 @@ void server(conf_t *conf,int argn,char **argv)
       {
       reload_conf = 0;
       reload_conf_file(conf);
+      int newalrm = get_conf_alrm(conf);
+      if (alrm || newalrm)
+        {
+        alrm = newalrm;
+        alarm(alrm);
+        }
+      }
+    if (trytoschedall)
+      {
+      trytoschedall=0;
+      schedule_host_group(conf,"all");
+      alarm(alrm);
       }
     
     server_thread_args_t client;
@@ -467,6 +506,7 @@ int client(conf_t *conf,char *prog,
       "t"       , listtokens_client ,
       "s"       , status_client    ,
       "restart" , restart_client   ,
+      "reload"  , reload_client    ,
       "term"    , terminate_client };
 
   const int nmodes = sizeof(modes)/sizeof(modes[0]);
@@ -495,7 +535,14 @@ const char *fn_status = "status";
 // before execle with: hostname pid tag
 const char *fn_machine = "machine"; 
 
+// contains a hdr + command string
+const char *fn_xxx     = "xxx";  // created first
+const char *fn_cmd     = "cmd";  // atomic rename
 
+// contains list of null sep parm=value
+const char *fn_parm    = "parm";
+
+#ifndef TEST
 int main(int argn,char **argv,char **env)
   {
   conf_t *conf = read_conf_file("/etc/queued.conf");
@@ -524,3 +571,4 @@ int main(int argn,char **argv,char **env)
   return client(conf,argv[0],argn-ra,argv+ra,env);
   }
 
+#endif
