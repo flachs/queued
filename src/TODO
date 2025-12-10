@@ -1,4 +1,10 @@
-
+ * test -lqs
+ * ui for -pause machine time
+ * ui for -kick
+ * clone job. maybe add (0/, 1/, ...) under jobdir
+   race and kill losers.
+   param clone=number to make job cloneable.
+   config clone idle conditions.
  * fix terminate to only work if root orders it
  * factor active users into queue.c:jl_fits_hl()
    maybe mem - active_users * usrmem
@@ -17,7 +23,7 @@ Done
    lower priority jobs.  Maybe priority=0 through 7
    with priority 0 scheduling before priority 7.
  * implement conf reload.  two ways:
-     - kill -USR2 the master to get a conf reload.
+     - kill -USR1 the master to get a conf reload.
      - q -reload [host|group] is the easyway - it sends 
        message rather than signal.
  * factor available memory into queue.c:jl_fits_hl()

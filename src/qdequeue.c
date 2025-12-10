@@ -22,9 +22,22 @@ typedef struct
 typedef void (act_on_job_handler_t)(dlc_string **resp,jobinfo_t *ji);
 
 static inline char *iso_jobdir(char *jd)
-  {
-  char *rv = strrchr(jd,'/');
-  return rv ? rv+1 : NULL;
+  { // find second to last /
+  char c;
+  char *pl[2];
+  pl[1]=pl[0] = 0;
+  
+  while (c=*jd)
+    {
+    if (c=='/')
+      {
+      pl[1] = pl[0];
+      pl[0] = jd;
+      }
+    jd++;
+    }
+
+  return pl[1] ? pl[1]+1 : NULL;
   }
 
 int jobdir_match(jobinfo_t *ji,re_job_match_spec_t *rjm)

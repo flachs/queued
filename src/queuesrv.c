@@ -311,6 +311,12 @@ int kill_job(joblink_t *tag)
   {
   int i = find_launched_tag(tag);
 
+  if (i<0)
+    { // didnt find tag
+    fprintf(stderr,"tag not present %p\n",tag);
+    return ENOMEDIUM;
+    }
+  
   /* there is a interval in qrun.c/server_child_fork between fork and
      setpgid where the sub process and the server share a process
      group.  killing the sub process during this interval delivers a

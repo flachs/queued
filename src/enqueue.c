@@ -10,6 +10,7 @@
 
 const char *queuedd=".queued";
 const char *slash="/";
+const char *slash0="/0";
 const sendhdr_t hdr_zero;
 
 void rm_jobdir(uid_t uid, char *jname)
@@ -100,8 +101,21 @@ static char *make_jobdir(conf_t *conf,char *lhostname,
     }
 
   // allow user the job dir.
-  chown(queued_dir,uid,gid);
+  chown(jobdirp,uid,gid);
 
+  jobdir = cpystring(jobdir, slash0);
+  if ( mkdir(jobdirp,0700))
+    { // something went wrong
+    if (errno!=EEXIST)
+      {
+      fprintf(stderr,"cant create job 0 dir %s\n",jobdirp);
+      return 0;
+      }
+    }
+
+  // allow user the job 0 dir.
+  chown(jobdirp,uid,gid);
+    
   int fd_jobdir = open(jobdirp,O_RDONLY|O_DIRECTORY|O_PATH);
   if (fd_jobdir < 0) 
     { // something went wrong
@@ -192,13 +206,8 @@ static char *make_jobdir(conf_t *conf,char *lhostname,
     }
   
   close(fd_jobdir);
-  
-  size_t lenrv = strlen_lhostname+strlen_xtemp;
-  char *rv = malloc(lenrv+1);
-  strncpy(rv,jobid,lenrv);
-  rv[lenrv]=0;
-  
-  return rv;
+
+  return strdup(jobid);
   }
 
 int enqueue_client(conf_t *conf,int argn,char **argv,char **env)
