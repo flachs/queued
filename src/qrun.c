@@ -534,12 +534,12 @@ void server_run(server_thread_args_t *client)
   
   // signal/exit status loop
   int nfds = ss->sock + 1;
+  int status = -1, sigval = -1;
+  char buf[16],bue[16];
   while (1)
     {
-    int status;
     if (pid_done(childpid,&status))
       {  // child has exited
-      char buf[16];
       buf[0] = status;
       send(ss->sock,buf,1,0);
       break;
@@ -556,15 +556,16 @@ void server_run(server_thread_args_t *client)
 
     if (FD_ISSET(ss->sock, &readfds))
       { // have incoming signal send from client
-      char buf[16];
-      ssize_t bytes = recv(ss->sock,buf,1,MSG_DONTWAIT);
-      int sigval = buf[0];
-      
-      killpg(childpid, sigval);
+      ssize_t bytes = recv(ss->sock,bue,1,MSG_DONTWAIT);
+      if (bytes>0)
+        {
+        sigval = bue[0];
+        killpg(childpid, sigval);
+        }
+      else break;
       }
     }
   //printlog("exiting\n");
-  
   close(ss->sock);
   free(ss->env);
   free(ss->cmd);
