@@ -566,7 +566,9 @@ void server_run(server_thread_args_t *client)
       }
     }
   //printlog("exiting\n");
+  shutdown(ss->sock,SHUT_WR);
   close(ss->sock);
+  
   free(ss->env);
   free(ss->cmd);
   free(ss);
